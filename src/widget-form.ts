@@ -439,6 +439,42 @@ const OPEN_BUTTON_SIZES: Record<string, string> = {
 // label, which centres the icon.
 const ICON_ONLY_TRAILING_SPACE: Record<string, string> = { small: '4px', medium: '8px', large: '16px' }
 
+const BUTTON_SIZES = ['small', 'medium', 'large']
+
+// A Form Open Button Style colour, or '' for the default. Every field but
+// fab can be bound to a column, so the value is table data that lands in a
+// style attribute: a ';' would add declarations and a '/*' swallow the ones
+// after it (CSS.supports() passes a trailing comment).
+const buttonColor = (value: unknown): string => {
+    if (typeof value !== 'string') return ''
+    const color = value.trim()
+    return color && !/[;{}]|\/\*/.test(color) && CSS.supports('color', color) ? color : ''
+}
+
+/**
+ * Form Open Button Style with every field checked, since all but fab can be
+ * bound and then carry whatever the column holds: a label may be a number, an
+ * unknown size is medium, and a blank, non-string or invalid colour or icon
+ * name falls back to the default ('' for colours, 'add' for the icon).
+ */
+const openButtonStyle = (style: FormConfiguration['formButtonStyle']) => {
+    const { label, size, iconName } = style ?? {}
+    const sizeName = typeof size === 'string' ? size.trim().toLowerCase() : ''
+    return {
+        fab: style?.fab !== false,
+        label:
+            typeof label === 'string'
+                ? label.trim()
+                : typeof label === 'number' && Number.isFinite(label)
+                  ? String(label)
+                  : '',
+        size: BUTTON_SIZES.includes(sizeName) ? sizeName : 'medium',
+        bgColor: buttonColor(style?.bgColor),
+        color: buttonColor(style?.color),
+        iconName: typeof iconName === 'string' && iconName.trim() ? iconName.trim() : 'add'
+    }
+}
+
 let maskSheet: CSSStyleSheet | null | undefined
 
 // The sheet that masks a secret field kept away from the browser's password
@@ -1600,11 +1636,8 @@ export class WidgetForm extends LitElement {
             this.inputData?.formButton ? raisedColor : bgColorOpaque,
             fontColor
         )
-        // A blank or non-string icon name keeps the plus sign; the label names
-        // the form, since a custom icon need not mean "add".
-        const buttonStyle = this.inputData?.formButtonStyle
-        const iconName = buttonStyle?.iconName
-        const fabIcon = typeof iconName === 'string' && iconName.trim() ? iconName.trim() : 'add'
+        // The label names the form, since a custom icon need not mean "add".
+        const buttonStyle = openButtonStyle(this.inputData?.formButtonStyle)
         const title = this.inputData?.title
         const fabLabel = typeof title === 'string' && title.trim() ? title.trim() : 'Open form'
         return html`
@@ -1646,20 +1679,20 @@ export class WidgetForm extends LitElement {
             </style>
             <div class="header">
                 ${this.inputData?.formButton
-                    ? buttonStyle?.fab === false
-                        ? this.renderOpenButton(fabIcon, fabLabel, bgColorOpaque)
+                    ? !buttonStyle.fab
+                        ? this.renderOpenButton(buttonStyle, fabLabel, bgColorOpaque)
                         : html`
                               <md-fab
                                   aria-label=${fabLabel}
-                                  .size=${buttonStyle?.size || 'medium'}
-                                  style="margin: 8px; --md-fab-container-color: ${(buttonStyle?.bgColor ||
+                                  .size=${buttonStyle.size}
+                                  style="margin: 8px; --md-fab-container-color: ${(buttonStyle.bgColor ||
                                       this.theme?.theme_object?.color?.[0]) ??
-                                  '#9064f7'}; --md-fab-icon-color: ${(buttonStyle?.color ||
+                                  '#9064f7'}; --md-fab-icon-color: ${(buttonStyle.color ||
                                       this.theme?.theme_object?.color?.[1]) ??
                                   '#fff'}"
                                   @click=${this.openFormDialog}
                               >
-                                  <md-icon slot="icon">${fabIcon}</md-icon>
+                                  <md-icon slot="icon">${buttonStyle.iconName}</md-icon>
                               </md-fab>
                           `
                     : nothing}
@@ -1763,15 +1796,10 @@ export class WidgetForm extends LitElement {
      * contrast, not the theme's second palette colour the FAB's icon defaults
      * to.
      */
-    renderOpenButton(icon: string, ariaLabel: string, surface: string) {
-        const style = this.inputData?.formButtonStyle
-        const label = typeof style?.label === 'string' ? style.label.trim() : ''
-        const container = String((style?.bgColor || this.theme?.theme_object?.color?.[0]) ?? '#9064f7')
-        const configured: unknown = style?.color
-        const content =
-            typeof configured === 'string' && configured.trim()
-                ? configured
-                : onColor(opaqueSurface([surface, container]))
+    renderOpenButton(style: ReturnType<typeof openButtonStyle>, ariaLabel: string, surface: string) {
+        const { label, size } = style
+        const container = String((style.bgColor || this.theme?.theme_object?.color?.[0]) ?? '#9064f7')
+        const content = style.color || onColor(opaqueSurface([surface, container]))
         const tokens = [
             `--md-filled-button-container-color: ${container};`,
             ...['label-text', 'icon'].flatMap((part) =>
@@ -1781,12 +1809,8 @@ export class WidgetForm extends LitElement {
             ),
             `--md-filled-button-hover-state-layer-color: ${content};`,
             `--md-filled-button-pressed-state-layer-color: ${content};`,
-            OPEN_BUTTON_SIZES[String(style?.size)] ?? '',
-            label
-                ? ''
-                : `--md-filled-button-with-leading-icon-trailing-space: ${
-                      ICON_ONLY_TRAILING_SPACE[String(style?.size)] ?? ICON_ONLY_TRAILING_SPACE.medium
-                  };`
+            OPEN_BUTTON_SIZES[size] ?? '',
+            label ? '' : `--md-filled-button-with-leading-icon-trailing-space: ${ICON_ONLY_TRAILING_SPACE[size]};`
         ]
         return html`<md-filled-button
             class="open-btn"
@@ -1795,7 +1819,7 @@ export class WidgetForm extends LitElement {
             aria-label=${label ? nothing : ariaLabel}
             style=${tokens.join(' ')}
             @click=${this.openFormDialog}
-            ><md-icon slot="icon">${icon}</md-icon>${label}</md-filled-button
+            ><md-icon slot="icon">${style.iconName}</md-icon>${label}</md-filled-button
         >`
     }
 

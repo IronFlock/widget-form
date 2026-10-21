@@ -22,15 +22,15 @@ export type FormOpenButton = boolean;
  */
 export type FloatingActionButton = boolean;
 /**
- * Text on the regular button that opens the form, next to its icon (e.g., 'Report issue', 'Add reading'). Left empty, the button shows only the icon. Only applies when Floating Action Button is disabled.
+ * Text on the regular button that opens the form, next to its icon (e.g., 'Report issue', 'Add reading'). Left empty, the button shows only the icon. Only applies when Floating Action Button is disabled. Can be bound to a column; a numeric value is shown as it is.
  */
 export type LabelText = string;
 /**
- * The size of the form open button: small, medium (the default) or large. A floating action button is 40, 56 or 96px; a regular button is 32, 40 or 56px tall.
+ * The size of the form open button: small, medium (the default) or large. A floating action button is 40, 56 or 96px; a regular button is 32, 40 or 56px tall. Can be bound to a column holding 'small', 'medium' or 'large'; any other value gives medium.
  */
 export type Size = "small" | "medium" | "large";
 /**
- * Material icon name shown on the form open button. Find icon names at https://fonts.google.com/icons (e.g., 'edit_note', 'build', 'upload_file', 'add_comment'). Leave empty for the default plus sign ('add').
+ * Material icon name shown on the form open button. Find icon names at https://fonts.google.com/icons (e.g., 'edit_note', 'build', 'upload_file', 'add_comment'). Leave empty for the default plus sign ('add'). Can be bound to a column holding an icon name, so the icon can reflect a state (e.g., 'warning' while an alarm is active).
  */
 export type IconName = string;
 /**
@@ -216,7 +216,7 @@ export interface FormConfiguration {
     [k: string]: unknown;
 }
 /**
- * Customization options for the form open button's appearance. Choose a round floating action button with an icon, or a regular button with an icon and a label text, and configure its size, colors and icon to match your application's design. These settings only apply when the Form Open Button is enabled.
+ * Customization options for the form open button's appearance. Choose a round floating action button with an icon, or a regular button with an icon and a label text, and configure its size, colors and icon to match your application's design. These settings only apply when the Form Open Button is enabled. Every setting except Floating Action Button can be bound to a column, so the button can follow data, for example turning red and reading 'Report fault' while a machine is down.
  */
 export interface FormOpenButtonStyle {
     fab?: FloatingActionButton;
@@ -228,13 +228,13 @@ export interface FormOpenButtonStyle {
     [k: string]: unknown;
 }
 /**
- * The background color of the form open button. Can be set to a specific color value (e.g., '#ff0000' for red) or left as default to use the theme's primary color.
+ * The background color of the form open button. Can be set to a specific color value (e.g., '#ff0000' for red) or left as default to use the theme's primary color. Can be bound to a column holding a CSS color; a value that is not a valid color keeps the default.
  */
 export interface BackgroundColor {
     [k: string]: unknown;
 }
 /**
- * The color of the icon on the form open button, and of the Label Text on a regular button. Can be set to a specific color value (e.g., '#ffffff' for white) or left as default: a floating action button then uses the theme's second chart color, a regular button black or white, whichever reads better on its background.
+ * The color of the icon on the form open button, and of the Label Text on a regular button. Can be set to a specific color value (e.g., '#ffffff' for white) or left as default: a floating action button then uses the theme's second chart color, a regular button black or white, whichever reads better on its background. Can be bound to a column holding a CSS color; a value that is not a valid color keeps the default.
  */
 export interface IconAndLabelColor {
     [k: string]: unknown;

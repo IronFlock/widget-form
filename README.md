@@ -68,6 +68,8 @@ interface FormButtonStyle {
 
 By default (`fab` unset or `true`) it is a round Material floating action button that shows only the icon, 40, 56 or 96px by `size`. With `fab: false` it is a Material filled button with the icon and `label` (only the icon when `label` is empty), 32, 40 or 56px tall by `size`; a long label is cut with an ellipsis at the tile's edge. Unset, its label and icon are black or white, whichever reads on its background.
 
+Every field except `fab` can be bound to a column, so the button can follow data: a fault state can turn it red, swap its icon to `warning` and relabel it "Report fault". A bound value that does not fit falls back to the default: a size other than small, medium or large gives medium, an invalid colour the theme's, and an empty icon name `add`. A numeric label is shown as it is.
+
 ### Dialog Size
 
 With `formButton: true` the form opens in a dialog that is 480px wide (narrower on small screens) and as tall as its fields, up to 80% of the window height. `formDialogSize` sets the dialog's minimum width and height:
