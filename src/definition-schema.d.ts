@@ -30,6 +30,10 @@ export type LabelText = string;
  */
 export type Size = "small" | "medium" | "large";
 /**
+ * Corner radius of the form open button in px, for the floating action button and the regular button alike. 0 gives square corners; half the button's height or more makes it fully round (a circle for a floating action button, a pill for a regular button). Leave empty for the default: a floating action button has 12, 16 or 28px corners by Size, a regular button is fully round. Can be bound to a column holding a number; a value that is not a number of 0 or more keeps the default.
+ */
+export type CornerRadius = number;
+/**
  * Material icon name shown on the form open button. Find icon names at https://fonts.google.com/icons (e.g., 'edit_note', 'build', 'upload_file', 'add_comment'). Leave empty for the default plus sign ('add'). Can be bound to a column holding an icon name, so the icon can reflect a state (e.g., 'warning' while an alarm is active).
  */
 export type IconName = string;
@@ -216,12 +220,13 @@ export interface FormConfiguration {
     [k: string]: unknown;
 }
 /**
- * Customization options for the form open button's appearance. Choose a round floating action button with an icon, or a regular button with an icon and a label text, and configure its size, colors and icon to match your application's design. These settings only apply when the Form Open Button is enabled. Every setting except Floating Action Button can be bound to a column, so the button can follow data, for example turning red and reading 'Report fault' while a machine is down.
+ * Customization options for the form open button's appearance. Choose a round floating action button with an icon, or a regular button with an icon and a label text, and configure its size, corner radius, colors and icon to match your application's design. These settings only apply when the Form Open Button is enabled. Every setting except Floating Action Button can be bound to a column, so the button can follow data, for example turning red and reading 'Report fault' while a machine is down.
  */
 export interface FormOpenButtonStyle {
     fab?: FloatingActionButton;
     label?: LabelText;
     size?: Size;
+    cornerRadius?: CornerRadius;
     bgColor?: BackgroundColor;
     color?: IconAndLabelColor;
     iconName?: IconName;

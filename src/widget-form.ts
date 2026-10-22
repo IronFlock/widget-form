@@ -451,11 +451,22 @@ const buttonColor = (value: unknown): string => {
     return color && !/[;{}]|\/\*/.test(color) && CSS.supports('color', color) ? color : ''
 }
 
+// A Form Open Button Style corner radius as px, or '' for Material's own
+// corners. A bound column may hold the number as text.
+const buttonRadius = (value: unknown): string => {
+    const radius = typeof value === 'string' && value.trim() ? Number(value) : value
+    return typeof radius === 'number' && Number.isFinite(radius) && radius >= 0 ? `${radius}px` : ''
+}
+
+// Material sets the FAB's corners per size, so the radius goes to all three.
+const FAB_SHAPE_SIZES = ['', 'small-', 'large-']
+
 /**
  * Form Open Button Style with every field checked, since all but fab can be
  * bound and then carry whatever the column holds: a label may be a number, an
- * unknown size is medium, and a blank, non-string or invalid colour or icon
- * name falls back to the default ('' for colours, 'add' for the icon).
+ * unknown size is medium, and a blank, non-string or invalid colour, corner
+ * radius or icon name falls back to the default ('' for colours and the
+ * radius, 'add' for the icon).
  */
 const openButtonStyle = (style: FormConfiguration['formButtonStyle']) => {
     const { label, size, iconName } = style ?? {}
@@ -469,6 +480,7 @@ const openButtonStyle = (style: FormConfiguration['formButtonStyle']) => {
                   ? String(label)
                   : '',
         size: BUTTON_SIZES.includes(sizeName) ? sizeName : 'medium',
+        cornerRadius: buttonRadius(style?.cornerRadius),
         bgColor: buttonColor(style?.bgColor),
         color: buttonColor(style?.color),
         iconName: typeof iconName === 'string' && iconName.trim() ? iconName.trim() : 'add'
@@ -1640,6 +1652,11 @@ export class WidgetForm extends LitElement {
         const buttonStyle = openButtonStyle(this.inputData?.formButtonStyle)
         const title = this.inputData?.title
         const fabLabel = typeof title === 'string' && title.trim() ? title.trim() : 'Open form'
+        const fabShape = buttonStyle.cornerRadius
+            ? FAB_SHAPE_SIZES.map(
+                  (size) => `--md-fab-${size}container-shape: ${buttonStyle.cornerRadius};`
+              ).join(' ')
+            : ''
         return html`
             <style>
                 :host {
@@ -1689,7 +1706,7 @@ export class WidgetForm extends LitElement {
                                       this.theme?.theme_object?.color?.[0]) ??
                                   '#9064f7'}; --md-fab-icon-color: ${(buttonStyle.color ||
                                       this.theme?.theme_object?.color?.[1]) ??
-                                  '#fff'}"
+                                  '#fff'}; ${fabShape}"
                                   @click=${this.openFormDialog}
                               >
                                   <md-icon slot="icon">${buttonStyle.iconName}</md-icon>
@@ -1810,6 +1827,7 @@ export class WidgetForm extends LitElement {
             `--md-filled-button-hover-state-layer-color: ${content};`,
             `--md-filled-button-pressed-state-layer-color: ${content};`,
             OPEN_BUTTON_SIZES[size] ?? '',
+            style.cornerRadius ? `--md-filled-button-container-shape: ${style.cornerRadius};` : '',
             label ? '' : `--md-filled-button-with-leading-icon-trailing-space: ${ICON_ONLY_TRAILING_SPACE[size]};`
         ]
         return html`<md-filled-button

@@ -40,7 +40,7 @@
         },
         "formButtonStyle": {
             "title": "Form Open Button Style",
-            "description": "Customization options for the form open button's appearance. Choose a round floating action button with an icon, or a regular button with an icon and a label text, and configure its size, colors and icon to match your application's design. These settings only apply when the Form Open Button is enabled. Every setting except Floating Action Button can be bound to a column, so the button can follow data, for example turning red and reading 'Report fault' while a machine is down.",
+            "description": "Customization options for the form open button's appearance. Choose a round floating action button with an icon, or a regular button with an icon and a label text, and configure its size, corner radius, colors and icon to match your application's design. These settings only apply when the Form Open Button is enabled. Every setting except Floating Action Button can be bound to a column, so the button can follow data, for example turning red and reading 'Report fault' while a machine is down.",
             "dataDrivenDisabled": true,
             "type": "object",
             "order": 4,
@@ -74,6 +74,13 @@
                     "order": 3,
                     "enum": ["small", "medium", "large"],
                     "enumLabels": ["Small", "Medium", "Large"]
+                },
+                "cornerRadius": {
+                    "title": "Corner Radius",
+                    "description": "Corner radius of the form open button in px, for the floating action button and the regular button alike. 0 gives square corners; half the button's height or more makes it fully round (a circle for a floating action button, a pill for a regular button). Leave empty for the default: a floating action button has 12, 16 or 28px corners by Size, a regular button is fully round. Can be bound to a column holding a number; a value that is not a number of 0 or more keeps the default.",
+                    "type": "number",
+                    "minimum": 0,
+                    "order": 3.5
                 },
                 "bgColor": {
                     "title": "Background Color",

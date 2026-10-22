@@ -60,6 +60,7 @@ interface FormButtonStyle {
     fab?: boolean // Floating action button (default); false for a regular button
     label?: string // Label Text of the regular button
     size?: 'small' | 'medium' | 'large'
+    cornerRadius?: number // Corner radius in px, for both kinds of button
     bgColor?: string // Background colour
     color?: string // Icon colour, and label colour on the regular button
     iconName?: string // Material icon name, 'add' by default
@@ -68,7 +69,9 @@ interface FormButtonStyle {
 
 By default (`fab` unset or `true`) it is a round Material floating action button that shows only the icon, 40, 56 or 96px by `size`. With `fab: false` it is a Material filled button with the icon and `label` (only the icon when `label` is empty), 32, 40 or 56px tall by `size`; a long label is cut with an ellipsis at the tile's edge. Unset, its label and icon are black or white, whichever reads on its background.
 
-Every field except `fab` can be bound to a column, so the button can follow data: a fault state can turn it red, swap its icon to `warning` and relabel it "Report fault". A bound value that does not fit falls back to the default: a size other than small, medium or large gives medium, an invalid colour the theme's, and an empty icon name `add`. A numeric label is shown as it is.
+`cornerRadius` rounds the corners of either button, in px: `0` is square, and half the button's height or more is fully round (a circle for the floating action button, a pill for the regular button). Unset, the floating action button keeps Material's 12, 16 or 28px corners by `size`, and the regular button is a pill.
+
+Every field except `fab` can be bound to a column, so the button can follow data: a fault state can turn it red, swap its icon to `warning` and relabel it "Report fault". A bound value that does not fit falls back to the default: a size other than small, medium or large gives medium, an invalid colour the theme's, a corner radius that is not a number of 0 or more (numeric text counts) Material's corners, and an empty icon name `add`. A numeric label is shown as it is.
 
 ### Dialog Size
 
