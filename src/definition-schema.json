@@ -1,8 +1,8 @@
 {
     "title": "Form Configuration",
-    "description": "A form widget for collecting user input and storing it in database tables. Use this widget to create data entry interfaces for manual input, configuration settings, user feedback, or any scenario requiring structured data collection. Supports various field types including text, numbers, dropdowns, checkboxes, textareas, datetime pickers, masked secrets and file uploads. Each field maps to a database column, enabling direct data persistence. Can display as a button-triggered modal or inline form.",
+    "description": "A form widget for collecting user input and storing it in database tables. Use this widget to create data entry interfaces for manual input, configuration settings, user feedback, or any scenario requiring structured data collection. Supports various field types including text, numbers, dropdowns, checkboxes, textareas, datetime pickers, color pickers, masked secrets and file uploads. Each field maps to a database column, enabling direct data persistence. Can display as a button-triggered modal or inline form.",
     "aiSelection": {
-        "dataShape": "Writes rather than reads. Each formFields[] entry maps one input control to a database column through targetColumn, and submitting stores a row. Field types cover text, number, dropdown, checkbox, textarea, datetime, secret and file, with validation, required flags, defaults and conditional visibility. A file field uploads one file into a FleetFiles namespace of the app and stores the file's key in its string column. A secret field is a masked, write-only input.",
+        "dataShape": "Writes rather than reads. Each formFields[] entry maps one input control to a database column through targetColumn, and submitting stores a row. Field types cover text, number, dropdown, checkbox, textarea, datetime, color, secret and file, with validation, required flags, defaults and conditional visibility. A file field uploads one file into a FleetFiles namespace of the app and stores the file's key in its string column. A secret field is a masked, write-only input.",
         "useWhen": [
             "A person needs to enter or correct data that is then persisted — manual readings, maintenance notes, quality checks, configuration values, feedback.",
             "Input must be structured and validated, with required fields, defaults, or fields that appear only when another field has a given value (conditionalDisplay).",
@@ -115,7 +115,7 @@
             "properties": {
                 "minWidth": {
                     "title": "Minimum Width",
-                    "description": "Minimum dialog width as a number with an optional unit, such as '800px', '60%' or '50vw' (no unit means px; % and vw are a share of the window width). Leave empty for the default. The dialog is normally 480px wide (less on small screens), so only a larger value makes it wider. The fields stay in one column: text fields, dropdowns and text areas widen with the dialog, while number and date fields keep their 200px.",
+                    "description": "Minimum dialog width as a number with an optional unit, such as '800px', '60%' or '50vw' (no unit means px; % and vw are a share of the window width). Leave empty for the default. The dialog is normally 480px wide (less on small screens), so only a larger value makes it wider. The fields stay in one column: text fields, dropdowns and text areas widen with the dialog, while number, date and color fields keep their 200px.",
                     "dataDrivenDisabled": true,
                     "type": "string",
                     "pattern": "^[ \\t\\n\\r\\f\\v]*(?:(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)[ \\t\\n\\r\\f\\v]*(?:(?:px|%|vw|vh|rem|em)[ \\t\\n\\r\\f\\v]*)?)?$",
@@ -210,8 +210,8 @@
                     },
                     "type": {
                         "title": "Field Type",
-                        "description": "The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for date and time selection, 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records.",
-                        "enum": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret"],
+                        "description": "The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for date and time selection, 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'color' for a color picked from the browser's color picker or typed (any CSS color, such as #1e88e5, rgb(30, 136, 229) or teal), stored in a string column as lowercase hex: #rrggbb, or #rrggbbaa when it is translucent (an empty field stores its default, else NULL), 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records.",
+                        "enum": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color"],
                         "type": "string",
                         "dataDrivenDisabled": true,
                         "order": 2
@@ -275,6 +275,16 @@
                         },
                         "order": 9
                     },
+                    "preFilledValueColor": {
+                        "title": "Pre-filled Value",
+                        "description": "Pre-filled color for this color field when the form loads, such as the record's current color in a form that edits it. Pick a color, or bind it to a column holding a CSS color (hex, rgb(), hsl() or a name). A value that is not a color is shown as it is and, unless the user changes it, written back unchanged.",
+                        "type": "color",
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["color"]
+                        },
+                        "order": 9.5
+                    },
                     "defaultValue": {
                         "title": "Default Value",
                         "description": "Default value for this field when the form loads. If the user does not provide a value, this default will be used. Can be a static value or bound to a data source.",
@@ -304,6 +314,16 @@
                             "showIfValueIn": ["checkbox"]
                         },
                         "order": 12
+                    },
+                    "defaultValueColor": {
+                        "title": "Default Value",
+                        "description": "Color stored when the user leaves this color field empty; the empty field's swatch shows it. Can be a static color or bound to a column holding a CSS color.",
+                        "type": "color",
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["color"]
+                        },
+                        "order": 12.5
                     },
                     "min": {
                         "title": "Minimum Value",

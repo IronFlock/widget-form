@@ -37,6 +37,9 @@ type TargetRef = {
 // A column value, as data-submit carries it.
 type ValueItem = TargetRef & { value: unknown }
 
+// The md-outlined-text-field of a colour field, as its handlers use it.
+type ColorTextField = HTMLElement & { value: string; setCustomValidity: (message: string) => void }
+
 // A file for the host to store in the app's FleetFiles namespace before it
 // writes the row; the column gets the stored object's key, and urlColumn, when
 // the field names one, the object's permanent URL, which only the host can
@@ -291,14 +294,13 @@ let colorContext: CanvasRenderingContext2D | null | undefined
 
 // A colour as [r, g, b, alpha] in sRGB (channels 0-255), parsed by the browser
 // itself through a canvas's fillStyle, so names, hsl(), hex with alpha,
-// color-mix() and the like all work. A value the browser rejects comes back
-// fully transparent, the way an invalid background-color leaves a tile. Only
-// the normalised string is read, never pixels: with Firefox's
+// color-mix() and the like all work; undefined when the browser rejects it.
+// Only the normalised string is read, never pixels: with Firefox's
 // resistFingerprinting on, as in Tor Browser, getImageData() answers with
 // random colours.
-const parseColor = (value: string): number[] => {
+const readColor = (value: string): number[] | undefined => {
     colorContext ??= document.createElement('canvas').getContext('2d')
-    if (!colorContext) return [0, 0, 0, 0]
+    if (!colorContext) return undefined
     // Chromium hands oklch(), lab(), color() and the like back as written;
     // mixed into srgb they come back as color(srgb r g b / alpha). It rejects
     // light-dark() outright but takes it inside color-mix().
@@ -321,8 +323,44 @@ const parseColor = (value: string): number[] => {
             return [r, g, b, Number(match[4] ?? 1) || 0]
         }
     }
-    return [0, 0, 0, 0]
+    return undefined
 }
+
+// A colour the browser rejects counts as fully transparent, the way an
+// invalid background-color leaves a tile.
+const parseColor = (value: string): number[] => readColor(value) ?? [0, 0, 0, 0]
+
+const HEX_DIGITS = /^(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i
+
+/**
+ * A colour field's value as it is stored: lowercase hex, #rrggbb, or
+ * #rrggbbaa when it is translucent, so every widget and chart library can
+ * read the column; undefined when it is no colour. Any CSS colour is taken,
+ * and hex digits without the # too, as brand guides often print them.
+ * currentColor and the CSS-wide keywords (inherit and the like) name no
+ * colour of their own, so they count as none; the canvas rejects the
+ * keywords, and CSS.supports() whatever only color-mix() would make a
+ * colour of.
+ */
+const colorHex = (raw: unknown): string | undefined => {
+    if (typeof raw !== 'string') return undefined
+    const text = raw.trim()
+    const value = HEX_DIGITS.test(text) ? '#' + text : text
+    if (!value || /^currentcolor$/i.test(value) || !CSS.supports('color', value)) return undefined
+    const color = readColor(value)
+    if (!color) return undefined
+    const hex = (channel: number) => Math.round(channel).toString(16).padStart(2, '0')
+    const [r, g, b, alpha] = color
+    return '#' + [r, g, b].map(hex).join('') + (alpha < 1 ? hex(alpha * 255) : '')
+}
+
+// What a colour field says when its text is no colour.
+const COLOR_MESSAGE = 'Enter a color, such as #1e88e5, rgb(30, 136, 229) or teal.'
+
+// A colour field's Pre-filled or Default Value key: its text, or undefined
+// when it is blank or no text.
+const colorKey = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.trim() ? value : undefined
 
 const surfaceCache = new Map<string, string>()
 
@@ -562,6 +600,11 @@ export class WidgetForm extends LitElement {
     // The secret fields whose value is shown in clear text, by field index.
     @state() private revealedSecrets: Record<number, boolean> = {}
 
+    // What each colour field holds since it was edited, by field index, for
+    // its swatch, with the pre-filled value it replaced: a new pre-filled
+    // value resets the text field, and then the swatch follows it again.
+    @state() private typedColors: Record<number, { text: string; over: unknown }> = {}
+
     // The field index a file is being dragged over.
     @state() private dragTarget?: number
 
@@ -582,18 +625,25 @@ export class WidgetForm extends LitElement {
     }
 
     protected willUpdate(): void {
-        // A file field that a condition hides loses its input element, and
-        // with it the file; drop the file here too, so the field comes back
-        // empty instead of showing a file its fresh input does not hold.
+        // A file or colour field that a condition hides loses its input
+        // element, and with it the file or the typed colour; drop that here
+        // too, so the field comes back as it started instead of showing what
+        // its fresh input does not hold.
+        this.chosenFiles = this.withoutHidden(this.chosenFiles, 'file')
+        this.typedColors = this.withoutHidden(this.typedColors, 'color')
+    }
+
+    // A per-field record without the fields that are no longer of the type or
+    // are hidden; the same object when there are none.
+    private withoutHidden<T>(byField: Record<number, T>, type: string): Record<number, T> {
         const fields = this.inputData?.formFields ?? []
-        const hidden = Object.keys(this.chosenFiles)
+        const hidden = Object.keys(byField)
             .map(Number)
-            .filter((i) => fields[i]?.type !== 'file' || !this.isFieldVisible(fields[i]))
-        if (hidden.length) {
-            const chosen = { ...this.chosenFiles }
-            for (const i of hidden) delete chosen[i]
-            this.chosenFiles = chosen
-        }
+            .filter((i) => fields[i]?.type !== type || !this.isFieldVisible(fields[i]))
+        if (!hidden.length) return byField
+        const kept = { ...byField }
+        for (const i of hidden) delete kept[i]
+        return kept
     }
 
     protected firstUpdated(_changedProperties: PropertyValues): void {
@@ -916,13 +966,14 @@ export class WidgetForm extends LitElement {
         if (input?.form) this.refreshFieldValues(input.form)
     }
 
-    // preFilledValue/defaultValue and their *Multiline/*Boolean twins are separate
-    // config keys (the editor shows a single-line, multi-line or checkbox input
-    // depending on the field type). Resolve by the current type — normalizing the
-    // boolean keys to 'true'/'false' strings for the existing downstream logic —
-    // and fall back to the single-line key so fields configured before the split
-    // keep their values. A value lingering in a hidden twin key after a type
-    // switch is ignored.
+    // preFilledValue/defaultValue and their *Multiline/*Boolean/*Color twins are
+    // separate config keys (the editor shows a single-line, multi-line, checkbox
+    // or colour input depending on the field type). Resolve by the current type —
+    // normalizing the boolean keys to 'true'/'false' strings for the existing
+    // downstream logic — and fall back to the single-line key so fields
+    // configured before the split keep their values. A value lingering in a
+    // hidden twin key after a type switch is ignored. The editor stores a
+    // cleared colour as '', so a blank colour key falls back too.
     effectivePreFilledValue(field: Column): string | undefined {
         if (field.type === 'textarea')
             return (field.preFilledValueMultiline as string | undefined) ?? field.preFilledValue
@@ -930,6 +981,7 @@ export class WidgetForm extends LitElement {
             return field.preFilledValueBoolean != null
                 ? String(field.preFilledValueBoolean)
                 : field.preFilledValue
+        if (field.type === 'color') return colorKey(field.preFilledValueColor) ?? field.preFilledValue
         return field.preFilledValue
     }
 
@@ -938,6 +990,7 @@ export class WidgetForm extends LitElement {
             return (field.defaultValueMultiline as string | undefined) ?? field.defaultValue
         if (field.type === 'checkbox')
             return field.defaultValueBoolean != null ? String(field.defaultValueBoolean) : field.defaultValue
+        if (field.type === 'color') return colorKey(field.defaultValueColor) ?? field.defaultValue
         return field.defaultValue
     }
 
@@ -950,6 +1003,13 @@ export class WidgetForm extends LitElement {
             }
             case 'checkbox':
                 return value === 'on' || value === 'true' ? true : false
+            // A colour goes in as hex. A text that is no colour can only be
+            // a pre-filled value nobody changed (typing one blocks the
+            // save), so it is written back as it was.
+            case 'color': {
+                const text = typeof value === 'string' ? value.trim() : ''
+                return text ? (colorHex(text) ?? text) : null
+            }
             default:
                 return value
         }
@@ -1153,6 +1213,89 @@ export class WidgetForm extends LitElement {
         `
     }
 
+    // A text field for the colour, with a swatch in its trailing slot that
+    // shows it and opens the browser's colour picker: a transparent native
+    // colour input is stretched over the swatch, as over the file drop zone.
+    // The text field holds the value, so the field can be empty and required
+    // and takes a typed or pasted colour; a native colour input is never
+    // empty and knows only #rrggbb. The values are shown as hex, the way they
+    // are stored, and an empty field's swatch shows its default colour, which
+    // a save stores then.
+    renderColorField(field: Column, i: number) {
+        const preFilledValue = this.effectivePreFilledValue(field)
+        const defaultValue = this.effectiveDefaultValue(field)
+        const typed = this.typedColors[i]
+        const text = typed && typed.over === preFilledValue ? typed.text : (preFilledValue ?? '')
+        const shown = colorHex(text.trim() ? text : defaultValue)
+        return html`
+            <md-outlined-text-field
+                .name="column-${i}"
+                .label="${field.label ?? ''}"
+                style="width: 200px;"
+                .value="${colorHex(preFilledValue) ?? preFilledValue ?? ''}"
+                .placeholder="${colorHex(defaultValue) ?? defaultValue ?? ''}"
+                supporting-text=${field.description ?? ''}
+                @input=${(event: Event) => this.handleColorTyped(event, field, i)}
+                @change=${(event: Event) => this.handleColorCommitted(event, field, i)}
+                ?required=${field.required && !defaultValue && !preFilledValue}
+            >
+                <span
+                    slot="trailing-icon"
+                    class="color-swatch"
+                    ?empty=${!shown}
+                    style=${shown ? `--swatch-color: ${shown}` : nothing}
+                >
+                    <input
+                        type="color"
+                        class="color-input"
+                        aria-label="Pick ${field.label || 'a color'}"
+                        .value=${shown?.slice(0, 7) ?? '#000000'}
+                        @input=${(event: Event) => this.handleColorPicked(event, field, i)}
+                    />
+                </span>
+            </md-outlined-text-field>
+        `
+    }
+
+    // A colour field's text field, for the events that come from it rather
+    // than from the native picker in its trailing slot, which bubble through
+    // it too.
+    private colorTextField(event: Event): ColorTextField | undefined {
+        const field = event.currentTarget as ColorTextField
+        return event.target === field ? field : undefined
+    }
+
+    // A colour for the swatch, and an error on Submit when the text is none.
+    private setColorText(textField: ColorTextField, field: Column, i: number) {
+        const text = textField.value
+        textField.setCustomValidity(text.trim() && !colorHex(text) ? COLOR_MESSAGE : '')
+        this.typedColors = { ...this.typedColors, [i]: { text, over: this.effectivePreFilledValue(field) } }
+    }
+
+    handleColorTyped(event: Event, field: Column, i: number) {
+        const textField = this.colorTextField(event)
+        if (textField) this.setColorText(textField, field, i)
+    }
+
+    // Once typed, the colour is shown as the hex it is stored as.
+    handleColorCommitted(event: Event, field: Column, i: number) {
+        const textField = this.colorTextField(event)
+        if (!textField) return
+        const hex = colorHex(textField.value)
+        if (hex) textField.value = hex
+        this.setColorText(textField, field, i)
+    }
+
+    // The picker sets the colour; a translucent one typed before keeps its
+    // alpha, which the picker cannot show.
+    handleColorPicked(event: Event, field: Column, i: number) {
+        const picker = event.target as HTMLInputElement
+        const textField = picker.closest<ColorTextField>('md-outlined-text-field')
+        if (!textField) return
+        textField.value = picker.value + (colorHex(textField.value)?.slice(7) ?? '')
+        this.setColorText(textField, field, i)
+    }
+
     // A masked text field that always starts empty: a saved secret is never
     // read back, and leaving the field empty keeps it (secretFieldItems()).
     // The eye button shows what was typed.
@@ -1291,6 +1434,7 @@ export class WidgetForm extends LitElement {
         this.chosenFiles = {}
         this.fileErrors = {}
         this.revealedSecrets = {}
+        this.typedColors = {}
         this.submitError = ''
     }
 
@@ -1567,6 +1711,49 @@ export class WidgetForm extends LitElement {
             position: relative;
             z-index: 1;
             flex: 0 0 auto;
+        }
+
+        /* The colour over a checkerboard, so a translucent one shows as
+           such; a diagonal stroke while the field holds none. The outline
+           keeps a colour like the surface visible. */
+        .color-swatch {
+            position: relative;
+            width: 24px;
+            height: 24px;
+            box-sizing: border-box;
+            border: 1px solid var(--md-sys-color-outline);
+            border-radius: 4px;
+            background:
+                linear-gradient(var(--swatch-color), var(--swatch-color)),
+                repeating-conic-gradient(#c8c8c8 0 25%, #ffffff 0 50%) 0 0 / 8px 8px;
+        }
+
+        .color-swatch[empty] {
+            background: linear-gradient(
+                to top right,
+                transparent calc(50% - 0.75px),
+                currentColor calc(50% - 0.75px) calc(50% + 0.75px),
+                transparent calc(50% + 0.75px)
+            );
+        }
+
+        .color-swatch:has(.color-input:focus-visible) {
+            outline: 2px solid currentColor;
+            outline-offset: 2px;
+        }
+
+        /* The native picker covers the swatch, so a click or a key press on
+           it opens the browser's colour picker. */
+        .color-input {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            opacity: 0;
+            cursor: pointer;
         }
 
         .supporting-text.error,
@@ -1877,6 +2064,8 @@ export class WidgetForm extends LitElement {
                                     return this.renderFileField(field, i)
                                 case 'secret':
                                     return this.renderSecretField(field, i)
+                                case 'color':
+                                    return this.renderColorField(field, i)
                             }
                         }
                     )}

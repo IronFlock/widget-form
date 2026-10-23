@@ -38,7 +38,7 @@ export type CornerRadius = number;
  */
 export type IconName = string;
 /**
- * Minimum dialog width as a number with an optional unit, such as '800px', '60%' or '50vw' (no unit means px; % and vw are a share of the window width). Leave empty for the default. The dialog is normally 480px wide (less on small screens), so only a larger value makes it wider. The fields stay in one column: text fields, dropdowns and text areas widen with the dialog, while number and date fields keep their 200px.
+ * Minimum dialog width as a number with an optional unit, such as '800px', '60%' or '50vw' (no unit means px; % and vw are a share of the window width). Leave empty for the default. The dialog is normally 480px wide (less on small screens), so only a larger value makes it wider. The fields stay in one column: text fields, dropdowns and text areas widen with the dialog, while number, date and color fields keep their 200px.
  */
 export type MinimumWidth = string;
 /**
@@ -74,7 +74,7 @@ export type PostDeleteNavigationVariables = {
  */
 export type Label1 = string;
 /**
- * The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for date and time selection, 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records.
+ * The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for date and time selection, 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'color' for a color picked from the browser's color picker or typed (any CSS color, such as #1e88e5, rgb(30, 136, 229) or teal), stored in a string column as lowercase hex: #rrggbb, or #rrggbbaa when it is translucent (an empty field stores its default, else NULL), 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records.
  */
 export type FieldType =
     | "dropdown"
@@ -84,7 +84,8 @@ export type FieldType =
     | "textarea"
     | "datetime"
     | "file"
-    | "secret";
+    | "secret"
+    | "color";
 /**
  * When enabled, this field is hidden from users but its value (typically a default or data-bound value) is still submitted with the form. Useful for including metadata, timestamps, or user IDs automatically.
  */
@@ -182,9 +183,11 @@ export type FormFields = {
     preFilledValue?: PreFilledValue;
     preFilledValueMultiline?: PreFilledValue1;
     preFilledValueBoolean?: PreFilledValue2;
+    preFilledValueColor?: PreFilledValue3;
     defaultValue?: DefaultValue;
     defaultValueMultiline?: DefaultValue1;
     defaultValueBoolean?: DefaultValue2;
+    defaultValueColor?: DefaultValue3;
     min?: MinimumValue;
     max?: MaximumValue;
     validation?: ValidationRegex;
@@ -203,7 +206,7 @@ export type FormFields = {
 }[];
 
 /**
- * A form widget for collecting user input and storing it in database tables. Use this widget to create data entry interfaces for manual input, configuration settings, user feedback, or any scenario requiring structured data collection. Supports various field types including text, numbers, dropdowns, checkboxes, textareas, datetime pickers, masked secrets and file uploads. Each field maps to a database column, enabling direct data persistence. Can display as a button-triggered modal or inline form.
+ * A form widget for collecting user input and storing it in database tables. Use this widget to create data entry interfaces for manual input, configuration settings, user feedback, or any scenario requiring structured data collection. Supports various field types including text, numbers, dropdowns, checkboxes, textareas, datetime pickers, color pickers, masked secrets and file uploads. Each field maps to a database column, enabling direct data persistence. Can display as a button-triggered modal or inline form.
  */
 export interface FormConfiguration {
     title?: Title;
@@ -277,9 +280,21 @@ export interface PreFilledValue1 {
     [k: string]: unknown;
 }
 /**
+ * Pre-filled color for this color field when the form loads, such as the record's current color in a form that edits it. Pick a color, or bind it to a column holding a CSS color (hex, rgb(), hsl() or a name). A value that is not a color is shown as it is and, unless the user changes it, written back unchanged.
+ */
+export interface PreFilledValue3 {
+    [k: string]: unknown;
+}
+/**
  * Default value for this field when the form loads. If the user does not provide a value, this default will be used. Can be a static value or bound to a data source.
  */
 export interface DefaultValue1 {
+    [k: string]: unknown;
+}
+/**
+ * Color stored when the user leaves this color field empty; the empty field's swatch shows it. Can be a static color or bound to a column holding a CSS color.
+ */
+export interface DefaultValue3 {
     [k: string]: unknown;
 }
 /**

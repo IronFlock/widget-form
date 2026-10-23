@@ -104,19 +104,22 @@ Each form field supports the following types:
 | `datetime`    | Date/time picker               |
 | `file`        | Upload one file (FleetFiles)   |
 | `secret`      | Masked password or token       |
+| `color`       | Color picker, stored as hex    |
 
 ### Field Configuration
 
 ```ts
 interface FormField {
     label: string
-    type: 'dropdown' | 'textfield' | 'numberfield' | 'checkbox' | 'textarea' | 'datetime' | 'file' | 'secret'
+    type: 'dropdown' | 'textfield' | 'numberfield' | 'checkbox' | 'textarea' | 'datetime' | 'file' | 'secret' | 'color'
     hiddenField?: boolean // Hide field but still submit value
     required?: boolean // Field must be filled
     description?: string // Hint text shown below field
     targetColumn?: TargetColumn // Database column mapping
     preFilledValue?: string // For a file: the record's current key; not for a secret
     defaultValue?: string
+    preFilledValueColor?: string // For color, in place of preFilledValue: a color picker in the editor
+    defaultValueColor?: string // For color, in place of defaultValue
     min?: number // For numberfield
     max?: number // For numberfield
     validation?: string // Regex for textfield and secret (a secret's minimum requirements)
@@ -159,6 +162,15 @@ detail: {
 ```
 
 The host claims the event by calling `waitUntil()` while it is dispatched. It uploads each `file` under a key of its choosing, puts the key in as that item's value, writes the object's permanent URL into the item's `urlColumn` (null where it cannot build one), and writes the rows only when every upload succeeded. A null item for the URL column comes ahead of the file item, and a later item for the same column wins: a host that writes no URL leaves the column empty instead of keeping another file's URL. The form shows "Saving…" until the promise settles. If it resolves, the form resets and the dialog closes. If it rejects, the form keeps its values and shows the error's message. A host that does not know the event (Studio before file support) never claims it, and the form says that it cannot upload and saves nothing, rather than sending a `File` through `data-submit`, which would write garbage into the column.
+
+### Color Fields
+
+A `color` field takes a color for a string column, such as the color a chart or a status lamp shows for a category. It is a text field with a swatch: click the swatch, or tab to it and press Enter or Space, for the browser's color picker, or type or paste any CSS color (`#1e88e5`, `1e88e5`, `rgb(30, 136, 229)`, `teal`).
+
+- It stores lowercase hex, `#rrggbb`, or `#rrggbbaa` for a translucent color, which every widget and chart library reads. A typed color is shown as that hex once the field loses focus. The browser's picker has no transparency, so picking keeps the alpha of a translucent color typed before.
+- Text that is no color marks the field invalid, and the form cannot be saved until it is fixed. A pre-filled value that is no color is shown as it is and, unless the user changes it, written back unchanged.
+- Left empty, the field stores its default value, which its swatch shows, or else NULL. Required means it cannot be left empty when there is no default or pre-filled value, as for the other fields.
+- Set `preFilledValueColor` and `defaultValueColor`, for which the editor shows a color picker; `preFilledValue` and `defaultValue` are read when they are empty.
 
 ### Secret Fields
 

@@ -67,8 +67,10 @@
             const themeName = themes[params.get('theme')] ? params.get('theme') : 'light'
             if (themeName === 'chalk') document.body.style.backgroundColor = '#1f2833'
 
-            // File and secret fields stay out of default-data.json, which seeds
-            // every new form tile; the demo adds two of each (the second file field pre-filled).
+            // File, secret and colour fields stay out of default-data.json, which
+            // seeds every new form tile; the demo adds two of each (the second
+            // file field pre-filled, the colours a pre-filled one and a
+            // translucent default).
             const data = {
                 ...defaultData,
                 formButton: params.has('dialog'),
@@ -113,6 +115,19 @@
                         description: '4 digits',
                         validation: '^[0-9]{4}$',
                         validationMessage: 'Enter exactly 4 digits.'
+                    },
+                    {
+                        label: 'Line Color',
+                        type: 'color',
+                        required: true,
+                        description: 'Pick one or type it, such as teal',
+                        preFilledValueColor: '#E53935'
+                    },
+                    {
+                        label: 'Fill Color',
+                        type: 'color',
+                        description: 'Left empty, the default is saved',
+                        defaultValueColor: 'rgba(30, 136, 229, 0.5)'
                     }
                 ]
             }
