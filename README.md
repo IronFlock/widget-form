@@ -194,8 +194,8 @@ npm run build
 # Generate types from schema
 npm run types
 
-# Build, bump version, and publish
-npm run release
+# A release pull request; its merge publishes to npm
+just release-patch
 ```
 
 ## License
