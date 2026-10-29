@@ -1,14 +1,15 @@
 {
     "title": "Form Configuration",
-    "description": "A form widget for collecting user input and storing it in database tables. Use this widget to create data entry interfaces for manual input, configuration settings, user feedback, or any scenario requiring structured data collection. Supports various field types including text, numbers, dropdowns, checkboxes, textareas, datetime pickers, color pickers, masked secrets and file uploads. Each field maps to a database column, enabling direct data persistence. Can display as a button-triggered modal or inline form.",
+    "description": "A form widget for collecting user input and storing it in database tables. Use this widget to create data entry interfaces for manual input, configuration settings, user feedback, or any scenario requiring structured data collection. Field types: text, number, dropdown, checkbox, textarea, datetime, color, masked secret and file upload. Each field maps to a database column, enabling direct data persistence. Can display as a button-triggered modal or inline form.",
     "aiSelection": {
-        "dataShape": "Writes rather than reads. Each formFields[] entry maps one input control to a database column through targetColumn, and submitting stores a row. Field types cover text, number, dropdown, checkbox, textarea, datetime, color, secret and file, with validation, required flags, defaults and conditional visibility. A file field uploads one file into a FleetFiles namespace of the app and stores the file's key in its string column. A secret field is a masked, write-only input.",
+        "dataShape": "Writes rather than reads. Each formFields[] entry maps one input control to a database column through targetColumn, and submitting stores a row. Fields can share a row (width, fieldLayout.defaultWidth), and an entry of type section is a heading that groups the fields after it.",
         "useWhen": [
             "A person needs to enter or correct data that is then persisted — manual readings, maintenance notes, quality checks, configuration values, feedback.",
             "Input must be structured and validated, with required fields, defaults, or fields that appear only when another field has a given value (conditionalDisplay).",
             "Records should also be deletable or flagged as deleted from the dashboard (deleteButton, deleteFlagColumn).",
             "A record comes with a document, image or data file, such as a new SOP revision as a PDF: a field of type 'file' stores the file with the row (fileNamespace, acceptedFileTypes).",
-            "A password or API token is entered: a 'secret' field masks it and never shows the saved value. Target a 'secret: true' column, which FleetDB encrypts."
+            "A password or API token is entered: a 'secret' field masks it and never shows the saved value. Target a 'secret: true' column, which FleetDB encrypts.",
+            "A long form should read as a compact sheet, not one tall column: fields side by side (width, fieldLayout.defaultWidth), row breaks (newRow), headed groups shown or hidden together (type section), and compact fields for a desktop board (fieldLayout.density)."
         ],
         "notFor": [
             "Narrowing what other widgets display — that is filtering, not data entry. Use widget-filter-dropdown or widget-filter-calendar.",
@@ -115,7 +116,7 @@
             "properties": {
                 "minWidth": {
                     "title": "Minimum Width",
-                    "description": "Minimum dialog width as a number with an optional unit, such as '800px', '60%' or '50vw' (no unit means px; % and vw are a share of the window width). Leave empty for the default. The dialog is normally 480px wide (less on small screens), so only a larger value makes it wider. The fields stay in one column: text fields, dropdowns and text areas widen with the dialog, while number, date and color fields keep their 200px.",
+                    "description": "Minimum dialog width as a number with an optional unit, such as '800px', '60%' or '50vw' (no unit means px; % and vw are a share of the window width). Leave empty for the default. The dialog is normally 480px wide (less on small screens), so only a larger value makes it wider. Fields widen with the dialog, so fields that take part of a row (Width, Field Layout) fit more of them on a row; number, date and color fields on a full row keep their 200px.",
                     "dataDrivenDisabled": true,
                     "type": "string",
                     "pattern": "^[ \\t\\n\\r\\f\\v]*(?:(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)[ \\t\\n\\r\\f\\v]*(?:(?:px|%|vw|vh|rem|em)[ \\t\\n\\r\\f\\v]*)?)?$",
@@ -191,9 +192,44 @@
                 }
             }
         },
+        "fieldLayout": {
+            "title": "Field Layout",
+            "description": "How large the fields are and how they share rows. Unset, every field takes a full row at Material's standard size. Fields fill rows left to right in field order and wrap; in a narrow form they widen until each is at least the Minimum Field Width.",
+            "dataDrivenDisabled": true,
+            "type": "object",
+            "order": 9.5,
+            "properties": {
+                "defaultWidth": {
+                    "title": "Default Field Width",
+                    "description": "The share of a row a field takes when neither it nor its section sets a width: full (also when unset), three-quarters, two-thirds, half, third or quarter. Sections always take a full row.",
+                    "type": "string",
+                    "enum": ["full", "three-quarters", "two-thirds", "half", "third", "quarter"],
+                    "enumLabels": ["Full row", "Three quarters", "Two thirds", "Half", "One third", "One quarter"],
+                    "dataDrivenDisabled": true,
+                    "order": 1
+                },
+                "minFieldWidth": {
+                    "title": "Minimum Field Width",
+                    "description": "The narrowest a field may get, in px: 180 when unset, 0 for no limit. In a narrower form quarters widen to thirds, then all fields to halves, then to full rows, so a small tile or a phone shows one field per row.",
+                    "type": "number",
+                    "minimum": 0,
+                    "dataDrivenDisabled": true,
+                    "order": 2
+                },
+                "density": {
+                    "title": "Density",
+                    "description": "How large the fields are. Compact makes them 40px high with 14px text, the buttons 32px, and the gaps between fields smaller, which suits desktop boards used with a mouse; new forms start compact, so set it on every new form unless it is meant for a touch screen. Comfortable, also when unset, is Material's standard size with 56px high fields, the size of forms made before compact existed.",
+                    "type": "string",
+                    "enum": ["comfortable", "compact"],
+                    "enumLabels": ["Comfortable", "Compact"],
+                    "dataDrivenDisabled": true,
+                    "order": 3
+                }
+            }
+        },
         "formFields": {
             "title": "Form Fields",
-            "description": "Array of input fields that make up the form. Each field defines its type, validation rules, and target database column for storage. Fields are rendered in the order specified.",
+            "description": "Array of input fields that make up the form. Each field defines its type, validation rules, and target database column for storage. Fields are rendered in the order specified, side by side as their Width allows; an entry of type section is a heading over the fields after it.",
             "type": "array",
             "order": 10,
             "dataDrivenDisabled": true,
@@ -202,7 +238,7 @@
                 "properties": {
                     "label": {
                         "title": "Label",
-                        "description": "The text label displayed next to this form field. Should clearly describe what data the user should enter.",
+                        "description": "The text label displayed next to this form field. Should clearly describe what data the user should enter. For a section, the heading.",
                         "type": "string",
                         "dataDrivenDisabled": true,
                         "required": true,
@@ -210,17 +246,58 @@
                     },
                     "type": {
                         "title": "Field Type",
-                        "description": "The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for date and time selection, 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'color' for a color picked from the browser's color picker or typed (any CSS color, such as #1e88e5, rgb(30, 136, 229) or teal), stored in a string column as lowercase hex: #rrggbb, or #rrggbbaa when it is translucent (an empty field stores its default, else NULL), 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records.",
-                        "enum": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color"],
+                        "description": "The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for date and time selection, 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'color' for a color picked from the browser's color picker or typed (any CSS color, such as #1e88e5, rgb(30, 136, 229) or teal), stored in a string column as lowercase hex: #rrggbb, or #rrggbbaa when it is translucent (an empty field stores its default, else NULL), 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records. 'section' is a heading, not an input: it shows the Label and Hint Text across a full row and groups the fields after it up to the next section. Its Field Width in Group sets the width of those fields. It stores nothing, and its Conditional Display shows or hides the whole group (hidden fields store NULL).",
+                        "enum": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", "section"],
                         "type": "string",
                         "dataDrivenDisabled": true,
                         "order": 2
+                    },
+                    "width": {
+                        "title": "Width",
+                        "description": "The share of the row this field takes: full, three-quarters, two-thirds, half, third or quarter. Unset, it takes the Field Width in Group of the section it is in, else the Field Layout's Default Field Width, a full row unless set.",
+                        "type": "string",
+                        "enum": ["full", "three-quarters", "two-thirds", "half", "third", "quarter"],
+                        "enumLabels": ["Full row", "Three quarters", "Two thirds", "Half", "One third", "One quarter"],
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", false]
+                        },
+                        "order": 2.5
+                    },
+                    "newRow": {
+                        "title": "Start a New Row",
+                        "description": "When enabled, this field starts a new row even if it would still fit on the current one.",
+                        "type": "boolean",
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", false]
+                        },
+                        "order": 2.6
+                    },
+                    "groupWidth": {
+                        "title": "Field Width in Group",
+                        "description": "For a section: the share of a row each field of its group takes unless the field has a Width of its own. Unset, the fields take the Field Layout's Default Field Width.",
+                        "type": "string",
+                        "enum": ["full", "three-quarters", "two-thirds", "half", "third", "quarter"],
+                        "enumLabels": ["Full row", "Three quarters", "Two thirds", "Half", "One third", "One quarter"],
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["section"]
+                        },
+                        "order": 2.7
                     },
                     "hiddenField": {
                         "title": "Hidden Field",
                         "type": "boolean",
                         "description": "When enabled, this field is hidden from users but its value (typically a default or data-bound value) is still submitted with the form. Useful for including metadata, timestamps, or user IDs automatically.",
                         "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", false]
+                        },
                         "order": 3
                     },
                     "required": {
@@ -228,12 +305,16 @@
                         "type": "boolean",
                         "description": "When enabled, users must fill out this field before the form can be submitted. The form will show a validation error if left empty. Ignored when a default value is provided.",
                         "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", false]
+                        },
                         "order": 4
                     },
                     "description": {
                         "title": "Hint Text",
                         "type": "string",
-                        "description": "Helper text displayed below the field to guide users on what to enter. Use for format hints, examples, or clarifying instructions.",
+                        "description": "Helper text displayed below the field to guide users on what to enter. Use for format hints, examples, or clarifying instructions. For a section, the text under its heading.",
                         "dataDrivenDisabled": true,
                         "order": 5
                     },
@@ -243,6 +324,10 @@
                         "description": "The database table and column where this field's value will be stored on form submission. Select from available tables and columns. All fields targeting the same table will be combined into a single row insert.",
                         "dataDrivenDisabled": true,
                         "required": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", false]
+                        },
                         "order": 6
                     },
                     "preFilledValue": {
@@ -492,14 +577,14 @@
                     "conditionalDisplay": {
                         "title": "Conditional Display",
                         "type": "object",
-                        "description": "Optionally show this field only when another field in this form currently holds one of a set of values. Leave the controlling field empty to always show this field.",
+                        "description": "Optionally show this field only when another field in this form currently holds one of a set of values. Leave the controlling field empty to always show this field. On a section it shows or hides the whole group; keep the controlling field outside that group.",
                         "dataDrivenDisabled": true,
                         "order": 20,
                         "properties": {
                             "conditionField": {
                                 "title": "Conditional On Field",
                                 "type": "string",
-                                "description": "The Label of another field in this form that controls whether this field is shown. Leave empty to always show this field. The match is against the other field's current value (for dropdowns, the option's stored value).",
+                                "description": "The Label of another input field (not a section) in this form that controls whether this field is shown. Leave empty to always show this field. The match is against the other field's current value (for dropdowns, the option's stored value).",
                                 "dataDrivenDisabled": true,
                                 "order": 1
                             },
