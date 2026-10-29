@@ -47,6 +47,7 @@ interface FormConfiguration {
     formButton?: boolean // Show button to open form dialog
     formButtonStyle?: FormButtonStyle // How that button looks
     formDialogSize?: FormDialogSize // Minimum size of that dialog
+    fieldLayout?: FieldLayout // How the fields share rows (see Layout)
     formFields?: FormField[]
 }
 ```
@@ -84,7 +85,7 @@ interface FormDialogSize {
 }
 ```
 
-Each value is a number with an optional unit: `px` (assumed when there is none), `%` or `vw`/`vh` for a share of the window, `rem` or `em`. Empty keeps the default. A value replaces Material's own 280×140px minimum and is capped at the window less 24px on each side, so the dialog and its Submit button always stay on screen; a form taller than that scrolls inside the dialog. On an ordinary window a value below the default size therefore changes nothing, while on a window narrower than 328px (or a very short one) any value, even a large one, lets the dialog shrink a little below Material's minimum to keep those margins. Anything else, such as `auto`, `calc()` or a negative number, is ignored with a console warning.
+Each value is a number with an optional unit: `px` (assumed when there is none), `%` or `vw`/`vh` for a share of the window, `rem` or `em`. Empty keeps the default. A value replaces Material's own 280×140px minimum and is capped at the window less 24px on each side, so the dialog and its Submit button always stay on screen; a form taller than that scrolls inside the dialog. On an ordinary window a value below the default size therefore changes nothing, while on a window narrower than 328px (or a very short one) any value, even a large one, lets the dialog shrink a little below Material's minimum to keep those margins. Anything else, such as `auto`, `calc()` or a negative number, is ignored with a console warning. Fields that take part of a row (see Layout) fit more of them on a row in a wider dialog.
 
 ### Dialog Colours
 
@@ -105,13 +106,17 @@ Each form field supports the following types:
 | `file`        | Upload one file (FleetFiles)   |
 | `secret`      | Masked password or token       |
 | `color`       | Color picker, stored as hex    |
+| `section`     | Heading over a group of fields |
 
 ### Field Configuration
 
 ```ts
 interface FormField {
     label: string
-    type: 'dropdown' | 'textfield' | 'numberfield' | 'checkbox' | 'textarea' | 'datetime' | 'file' | 'secret' | 'color'
+    type: 'dropdown' | 'textfield' | 'numberfield' | 'checkbox' | 'textarea' | 'datetime' | 'file' | 'secret' | 'color' | 'section'
+    width?: FieldWidth // Share of the row; fieldLayout.defaultWidth when unset
+    newRow?: boolean // Start a new row even if the field would fit on the current one
+    groupWidth?: FieldWidth // For a section: the width of its group's fields
     hiddenField?: boolean // Hide field but still submit value
     required?: boolean // Field must be filled
     description?: string // Hint text shown below field
@@ -135,6 +140,33 @@ interface FormField {
     fileUrlColumn?: TargetColumn // For file: gets the file's permanent URL (Studio writes it)
 }
 ```
+
+### Layout
+
+Fields fill the form left to right in rows, in the order of `formFields`. By default every field takes a full row at Material's standard size, which is the single column of earlier versions.
+
+```ts
+interface FieldLayout {
+    defaultWidth?: FieldWidth // For fields without a width of their own or their section's; 'full' when unset
+    minFieldWidth?: number // In px; 180 when unset, 0 never widens a field
+    density?: 'comfortable' | 'compact' // 'comfortable' when unset; new forms start 'compact'
+}
+type FieldWidth = 'full' | 'three-quarters' | 'two-thirds' | 'half' | 'third' | 'quarter'
+```
+
+- A field's `width`, else its section's `groupWidth`, else `fieldLayout.defaultWidth`, sets its share of the row. A field that does not fit on the current row starts the next one, and `newRow: true` starts a new row even when it would fit.
+- In a form too narrow for its fields, they widen so that none is narrower than `minFieldWidth`. Below room for four, quarters become thirds and three quarters become two thirds. Below room for three, every field takes half a row, and below room for two, a full row. A three-quarters and a quarter field, or a two-thirds and a third field, therefore stay on one row while there are two columns. The form measures its own width, so this follows the tile and the dialog; the default 480px dialog fits two fields on a row.
+- Number, date and color fields on a full row keep their 200px. On part of a row they fill it.
+- A dropdown's label sits inside its outline, as on the text fields, so the two line up side by side. A file field's caption sits above its box, so put a file field on a row of its own or beside another file field.
+- A checkbox on part of a row is centered in the height of the text fields beside it.
+
+`density: 'compact'` makes the form smaller for desktop boards used with a mouse, and is what a form dropped on a board starts with (the default config sets it). Unset, a form is comfortable, Material's size, which is how forms made before stay. Fields are 40px high instead of Material's 56px, with 14px text, the buttons are 32px high, and the gaps between fields and rows shrink. The Form Open Button keeps its own `size`.
+
+#### Sections
+
+An entry of type `section` is a heading, not an input. It shows its `label`, with its `description` under it, across a full row, and a line above it unless it comes first. It groups the fields after it, up to the next section, and stores nothing. Its `groupWidth` sets the width of the fields in its group that have no `width` of their own.
+
+A section's `conditionalDisplay` shows or hides the heading and its whole group. The fields of a hidden group store NULL, as any field hidden by Conditional Display does, while a `hiddenField` in it keeps sending its value. Keep the controlling field outside the group it controls: once the group is hidden, a field inside it reads as its default value. A section never controls a condition, so it may share its label with a field.
 
 ### File Fields
 

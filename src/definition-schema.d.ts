@@ -38,7 +38,7 @@ export type CornerRadius = number;
  */
 export type IconName = string;
 /**
- * Minimum dialog width as a number with an optional unit, such as '800px', '60%' or '50vw' (no unit means px; % and vw are a share of the window width). Leave empty for the default. The dialog is normally 480px wide (less on small screens), so only a larger value makes it wider. The fields stay in one column: text fields, dropdowns and text areas widen with the dialog, while number, date and color fields keep their 200px.
+ * Minimum dialog width as a number with an optional unit, such as '800px', '60%' or '50vw' (no unit means px; % and vw are a share of the window width). Leave empty for the default. The dialog is normally 480px wide (less on small screens), so only a larger value makes it wider. Fields widen with the dialog, so fields that take part of a row (Width, Field Layout) fit more of them on a row; number, date and color fields on a full row keep their 200px.
  */
 export type MinimumWidth = string;
 /**
@@ -70,11 +70,23 @@ export type PostDeleteNavigationVariables = {
     [k: string]: unknown;
 }[];
 /**
- * The text label displayed next to this form field. Should clearly describe what data the user should enter.
+ * The share of a row a field takes when neither it nor its section sets a width: full (also when unset), three-quarters, two-thirds, half, third or quarter. Sections always take a full row.
+ */
+export type DefaultFieldWidth = "full" | "three-quarters" | "two-thirds" | "half" | "third" | "quarter";
+/**
+ * The narrowest a field may get, in px: 180 when unset, 0 for no limit. In a narrower form quarters widen to thirds, then all fields to halves, then to full rows, so a small tile or a phone shows one field per row.
+ */
+export type MinimumFieldWidth = number;
+/**
+ * How large the fields are. Compact makes them 40px high with 14px text, the buttons 32px, and the gaps between fields smaller, which suits desktop boards used with a mouse; new forms start compact, so set it on every new form unless it is meant for a touch screen. Comfortable, also when unset, is Material's standard size with 56px high fields, the size of forms made before compact existed.
+ */
+export type Density = "comfortable" | "compact";
+/**
+ * The text label displayed next to this form field. Should clearly describe what data the user should enter. For a section, the heading.
  */
 export type Label1 = string;
 /**
- * The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for date and time selection, 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'color' for a color picked from the browser's color picker or typed (any CSS color, such as #1e88e5, rgb(30, 136, 229) or teal), stored in a string column as lowercase hex: #rrggbb, or #rrggbbaa when it is translucent (an empty field stores its default, else NULL), 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records.
+ * The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for date and time selection, 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'color' for a color picked from the browser's color picker or typed (any CSS color, such as #1e88e5, rgb(30, 136, 229) or teal), stored in a string column as lowercase hex: #rrggbb, or #rrggbbaa when it is translucent (an empty field stores its default, else NULL), 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records. 'section' is a heading, not an input: it shows the Label and Hint Text across a full row and groups the fields after it up to the next section. Its Field Width in Group sets the width of those fields. It stores nothing, and its Conditional Display shows or hides the whole group (hidden fields store NULL).
  */
 export type FieldType =
     | "dropdown"
@@ -85,7 +97,20 @@ export type FieldType =
     | "datetime"
     | "file"
     | "secret"
-    | "color";
+    | "color"
+    | "section";
+/**
+ * The share of the row this field takes: full, three-quarters, two-thirds, half, third or quarter. Unset, it takes the Field Width in Group of the section it is in, else the Field Layout's Default Field Width, a full row unless set.
+ */
+export type Width = "full" | "three-quarters" | "two-thirds" | "half" | "third" | "quarter";
+/**
+ * When enabled, this field starts a new row even if it would still fit on the current one.
+ */
+export type StartANewRow = boolean;
+/**
+ * For a section: the share of a row each field of its group takes unless the field has a Width of its own. Unset, the fields take the Field Layout's Default Field Width.
+ */
+export type FieldWidthInGroup = "full" | "three-quarters" | "two-thirds" | "half" | "third" | "quarter";
 /**
  * When enabled, this field is hidden from users but its value (typically a default or data-bound value) is still submitted with the form. Useful for including metadata, timestamps, or user IDs automatically.
  */
@@ -95,7 +120,7 @@ export type HiddenField = boolean;
  */
 export type Required = boolean;
 /**
- * Helper text displayed below the field to guide users on what to enter. Use for format hints, examples, or clarifying instructions.
+ * Helper text displayed below the field to guide users on what to enter. Use for format hints, examples, or clarifying instructions. For a section, the text under its heading.
  */
 export type HintText = string;
 /**
@@ -163,7 +188,7 @@ export type AcceptedFileTypes = string;
  */
 export type MaximumFileSizeMB = number;
 /**
- * The Label of another field in this form that controls whether this field is shown. Leave empty to always show this field. The match is against the other field's current value (for dropdowns, the option's stored value).
+ * The Label of another input field (not a section) in this form that controls whether this field is shown. Leave empty to always show this field. The match is against the other field's current value (for dropdowns, the option's stored value).
  */
 export type ConditionalOnField = string;
 /**
@@ -171,11 +196,14 @@ export type ConditionalOnField = string;
  */
 export type ShowIfValueIn = string;
 /**
- * Array of input fields that make up the form. Each field defines its type, validation rules, and target database column for storage. Fields are rendered in the order specified.
+ * Array of input fields that make up the form. Each field defines its type, validation rules, and target database column for storage. Fields are rendered in the order specified, side by side as their Width allows; an entry of type section is a heading over the fields after it.
  */
 export type FormFields = {
     label?: Label1;
     type?: FieldType;
+    width?: Width;
+    newRow?: StartANewRow;
+    groupWidth?: FieldWidthInGroup;
     hiddenField?: HiddenField;
     required?: Required;
     description?: HintText;
@@ -206,7 +234,7 @@ export type FormFields = {
 }[];
 
 /**
- * A form widget for collecting user input and storing it in database tables. Use this widget to create data entry interfaces for manual input, configuration settings, user feedback, or any scenario requiring structured data collection. Supports various field types including text, numbers, dropdowns, checkboxes, textareas, datetime pickers, color pickers, masked secrets and file uploads. Each field maps to a database column, enabling direct data persistence. Can display as a button-triggered modal or inline form.
+ * A form widget for collecting user input and storing it in database tables. Use this widget to create data entry interfaces for manual input, configuration settings, user feedback, or any scenario requiring structured data collection. Field types: text, number, dropdown, checkbox, textarea, datetime, color, masked secret and file upload. Each field maps to a database column, enabling direct data persistence. Can display as a button-triggered modal or inline form.
  */
 export interface FormConfiguration {
     title?: Title;
@@ -219,6 +247,7 @@ export interface FormConfiguration {
     deleteFlagColumn?: DeleteFlagColumn;
     deleteNavigationRoute?: PostDeleteNavigation;
     variables?: PostDeleteNavigationVariables;
+    fieldLayout?: FieldLayout;
     formFields?: FormFields;
     [k: string]: unknown;
 }
@@ -265,6 +294,15 @@ export interface HighlightColor {
  * The target table column used to mark records as deleted when the delete button is clicked. This MUST be a boolean column. If the target table has such a deleted_flag column, it should be specified here regardless of the delete button setting.
  */
 export interface DeleteFlagColumn {
+    [k: string]: unknown;
+}
+/**
+ * How large the fields are and how they share rows. Unset, every field takes a full row at Material's standard size. Fields fill rows left to right in field order and wrap; in a narrow form they widen until each is at least the Minimum Field Width.
+ */
+export interface FieldLayout {
+    defaultWidth?: DefaultFieldWidth;
+    minFieldWidth?: MinimumFieldWidth;
+    density?: Density;
     [k: string]: unknown;
 }
 /**
@@ -322,7 +360,7 @@ export interface FileURLColumn {
     [k: string]: unknown;
 }
 /**
- * Optionally show this field only when another field in this form currently holds one of a set of values. Leave the controlling field empty to always show this field.
+ * Optionally show this field only when another field in this form currently holds one of a set of values. Leave the controlling field empty to always show this field. On a section it shows or hides the whole group; keep the controlling field outside that group.
  */
 export interface ConditionalDisplay {
     conditionField?: ConditionalOnField;

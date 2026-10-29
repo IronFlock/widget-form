@@ -290,6 +290,101 @@ const dialogSizeStyle = (size: FormConfiguration['formDialogSize']) => {
     return declarations.filter(Boolean).join('; ') || nothing
 }
 
+// The share of a row a field takes, as Width and Default Field Width name it.
+// The form is a 12-column grid, and the w-<width> classes span 12, 9, 8, 6, 4
+// and 3 of its columns.
+const FIELD_WIDTHS = ['full', 'three-quarters', 'two-thirds', 'half', 'third', 'quarter'] as const
+type FieldWidth = (typeof FIELD_WIDTHS)[number]
+
+const isFieldWidth = (value: unknown): value is FieldWidth =>
+    (FIELD_WIDTHS as readonly unknown[]).includes(value)
+
+// The narrowest a field gets in a narrow form unless the Field Layout says
+// otherwise. A date and time and a select's value still show in full, and
+// the default 480px dialog keeps two fields on a row: its fields get 415 to
+// 432px, less its scrollbar, and two need 2 x 180 + 16.
+const DEFAULT_MIN_FIELD_WIDTH = 180
+
+// The gap between two fields on a row, in px: .form-content's column-gap, and
+// the compact density's (:host([compact]) in the styles).
+const FIELD_GAP = 16
+const COMPACT_FIELD_GAP = 12
+
+type FieldLayoutSettings = {
+    defaultWidth: FieldWidth
+    minFieldWidth: number
+    compact: boolean
+}
+
+// The Field Layout with its defaults: unset or invalid, every field takes a
+// full row at Material's standard size, the single column every form had
+// before.
+const fieldLayoutSettings = (layout: unknown): FieldLayoutSettings => {
+    const settings = layout && typeof layout === 'object' ? (layout as Record<string, unknown>) : {}
+    const raw = settings.minFieldWidth
+    const min = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() ? Number(raw) : NaN
+    return {
+        defaultWidth: isFieldWidth(settings.defaultWidth) ? settings.defaultWidth : 'full',
+        minFieldWidth: Number.isFinite(min) && min >= 0 ? min : DEFAULT_MIN_FIELD_WIDTH,
+        compact: settings.density === 'compact'
+    }
+}
+
+// A heading that groups the fields after it, rather than an input.
+const isSection = (field: unknown): boolean => (field as Column | null | undefined)?.type === 'section'
+
+// The index of the section whose group the entry at index i is in: the
+// nearest section before it, if any. Sections do not nest.
+const sectionOf = (fields: readonly unknown[], i: number): number | undefined => {
+    for (let k = i - 1; k >= 0; k--) if (isSection(fields[k])) return k
+    return undefined
+}
+
+// The width each formFields entry takes, by index: its own Width, else the
+// Field Width in Group of the section it is in, else the form's Default
+// Field Width. A section itself spans the row.
+const fieldWidths = (fields: readonly unknown[], defaultWidth: FieldWidth): FieldWidth[] => {
+    let groupWidth = defaultWidth
+    return fields.map((entry) => {
+        const field = entry as Column | null | undefined
+        if (isSection(field)) {
+            groupWidth = isFieldWidth(field?.groupWidth) ? field.groupWidth : defaultWidth
+            return 'full'
+        }
+        return isFieldWidth(field?.width) ? field.width : groupWidth
+    })
+}
+
+// The container queries that widen the fields of a form too narrow for them,
+// so that none gets narrower than the minimum. A field spanning n of the 12
+// columns is n/12 of the row less its share of the gaps, so a quarter reaches
+// the minimum m at a form width of 4m + 3 gaps, a third at 3m + 2 gaps and a
+// half at 2m + 1 gap. Three quarters and two thirds step down together with
+// the quarter and the third they share a row with, so such a pair stays on
+// one row: three quarters + a quarter become two thirds + a third, then two
+// halves, then two full rows. Where several rules apply the later one wins
+// (same specificity). 0 turns it off.
+const collapseRules = (min: number, gap: number): string => {
+    if (!(min > 0)) return ''
+    const below = (fields: number) => fields * min + (fields - 1) * gap
+    return `
+        @container (width < ${below(4)}px) {
+            .form-content > .w-quarter { grid-column-end: span 4; }
+            .form-content > .w-three-quarters { grid-column-end: span 8; }
+        }
+        @container (width < ${below(3)}px) {
+            .form-content > :is(.w-quarter, .w-third, .w-two-thirds, .w-three-quarters) {
+                grid-column-end: span 6;
+            }
+        }
+        @container (width < ${below(2)}px) {
+            .form-content > :is(.w-quarter, .w-third, .w-half, .w-two-thirds, .w-three-quarters) {
+                grid-column-end: span 12;
+            }
+        }
+    `
+}
+
 let colorContext: CanvasRenderingContext2D | null | undefined
 
 // A colour as [r, g, b, alpha] in sRGB (channels 0-255), parsed by the browser
@@ -639,7 +734,7 @@ export class WidgetForm extends LitElement {
         const fields = this.inputData?.formFields ?? []
         const hidden = Object.keys(byField)
             .map(Number)
-            .filter((i) => fields[i]?.type !== type || !this.isFieldVisible(fields[i]))
+            .filter((i) => fields[i]?.type !== type || !this.isFieldVisible(fields[i], i))
         if (!hidden.length) return byField
         const kept = { ...byField }
         for (const i of hidden) delete kept[i]
@@ -654,6 +749,9 @@ export class WidgetForm extends LitElement {
         this.patchDialogScrim()
         this.patchSecretFields()
         this.toggleAttribute('fab-mode', !!this.inputData?.formButton)
+        // The compact density's styles key on the host, so they reach the
+        // fields, the dialog's actions and the menus alike.
+        this.toggleAttribute('compact', fieldLayoutSettings(this.inputData?.fieldLayout).compact)
     }
 
     // The patch below per md-dialog element, and the scrim opacity it last
@@ -754,16 +852,19 @@ export class WidgetForm extends LitElement {
         const formData = new FormData(form)
         const submitData: (ValueItem | FileItem)[] = []
         this.inputData?.formFields?.forEach((field, i) => {
+            // A section is a heading: it has no column and writes nothing.
+            if (!field || isSection(field)) return
             const targetColumn = {
                 swarm_app_databackend_key: field.targetColumn?.swarm_app_databackend_key,
                 table_name: field.targetColumn?.tablename,
                 column_name: field.targetColumn?.column
             }
 
-            // A field hidden by an unmet conditional-display rule is "not
-            // applicable": submit null and skip value/default resolution. Its
-            // required rule never fired because the element was absent from the DOM.
-            if (!field.hiddenField && !this.isFieldVisible(field)) {
+            // A field hidden by an unmet conditional-display rule, its own or
+            // its section's, is "not applicable": submit null and skip
+            // value/default resolution. Its required rule never fired because
+            // the element was absent from the DOM.
+            if (!field.hiddenField && !this.isFieldVisible(field, i)) {
                 submitData.push({ ...targetColumn, value: null })
                 if (field.type === 'file') {
                     for (const companion of this.fileCompanions(field))
@@ -1045,20 +1146,35 @@ export class WidgetForm extends LitElement {
         if (form) this.refreshFieldValues(form)
     }
 
+    // Sections hold no value: one with a field's label must not shadow it.
     refreshFieldValues(form: HTMLFormElement) {
         const formData = new FormData(form)
         const values: Record<string, string> = {}
         this.inputData?.formFields?.forEach((field, i) => {
-            if (field.label) values[field.label] = this.currentRawValue(field, i, formData)
+            if (field?.label && !isSection(field))
+                values[field.label] = this.currentRawValue(field, i, formData)
         })
         this.fieldValues = values
     }
 
-    // A field is visible unless it declares a conditional-display rule whose
-    // controlling field (referenced by label) does not currently hold one of the
-    // listed values. Fail-open on misconfiguration (unknown field / empty list)
-    // so a half-configured rule never silently hides a field and its data.
-    isFieldVisible(field: Column): boolean {
+    // Whether the entry at index i is shown: its own conditional-display rule
+    // holds and, for a field in a section's group, the section's rule too, so
+    // a section shows or hides its whole group.
+    isFieldVisible(field: Column, i: number): boolean {
+        if (!isSection(field)) {
+            const fields = this.inputData?.formFields ?? []
+            const section = sectionOf(fields, i)
+            if (section !== undefined && !this.passesCondition(fields[section])) return false
+        }
+        return this.passesCondition(field)
+    }
+
+    // An entry passes unless it declares a conditional-display rule whose
+    // controlling field (referenced by label; a section never controls) does
+    // not currently hold one of the listed values. Fail-open on
+    // misconfiguration (unknown field / empty list) so a half-configured rule
+    // never silently hides a field and its data.
+    passesCondition(field: Column): boolean {
         const ref = field.conditionalDisplay?.conditionField?.trim()
         if (!ref) return true
         const allowed = (field.conditionalDisplay?.conditionValues ?? '')
@@ -1066,7 +1182,7 @@ export class WidgetForm extends LitElement {
             .map((v) => v.trim())
             .filter((v) => v !== '')
         if (allowed.length === 0) return true
-        const controller = this.inputData?.formFields?.find((f) => f.label === ref)
+        const controller = this.inputData?.formFields?.find((f) => f?.label === ref && !isSection(f))
         if (!controller) return true
         const current =
             this.fieldValues[ref] ??
@@ -1076,9 +1192,10 @@ export class WidgetForm extends LitElement {
         return allowed.includes(String(current))
     }
 
-    renderTextField(field: Column, i: number) {
+    renderTextField(field: Column, i: number, layout: string) {
         return html`
             <md-outlined-text-field
+                class=${layout}
                 .name="column-${i}"
                 .label="${field.label ?? ''}"
                 .type="${field.type === 'numberfield' ? 'number' : 'text'}"
@@ -1109,12 +1226,12 @@ export class WidgetForm extends LitElement {
         if (message && target.validity?.patternMismatch) target.setCustomValidity(message)
     }
 
-    renderNumberField(field: Column, i: number) {
+    renderNumberField(field: Column, i: number, layout: string) {
         return html`
             <md-outlined-text-field
+                class="fixed-width ${layout}"
                 .name="column-${i}"
                 .label="${field.label ?? ''}"
-                style="width: 200px;"
                 type="number"
                 .value="${field.preFilledValue ?? ''}"
                 .placeholder="${field.defaultValue ?? ''}"
@@ -1127,11 +1244,11 @@ export class WidgetForm extends LitElement {
         `
     }
 
-    renderCheckbox(field: Column, i: number) {
+    renderCheckbox(field: Column, i: number, layout: string) {
         const preFilledValue = this.effectivePreFilledValue(field)
         const defaultValue = this.effectiveDefaultValue(field)
         return html`
-            <div class="checkbox-container">
+            <div class="checkbox-container ${layout}">
                 <md-checkbox
                     name="column-${i}"
                     aria-label=${field.label ?? ''}
@@ -1148,11 +1265,12 @@ export class WidgetForm extends LitElement {
         `
     }
 
-    renderTextArea(field: Column, i: number) {
+    renderTextArea(field: Column, i: number, layout: string) {
         const preFilledValue = this.effectivePreFilledValue(field)
         const defaultValue = this.effectiveDefaultValue(field)
         return html`
             <md-outlined-text-field
+                class=${layout}
                 .name="column-${i}"
                 .label="${field.label ?? ''}"
                 type="textarea"
@@ -1165,45 +1283,45 @@ export class WidgetForm extends LitElement {
         `
     }
 
-    renderDropdown(field: Column, i: number) {
+    renderDropdown(field: Column, i: number, layout: string) {
         // Bind the value on the select itself (not just `selected` on the option):
         // md-outlined-select only reports its `value` to the form via ElementInternals,
         // and the declarative `selected` attribute does not reliably sync into it — so
         // a prefilled option would display but submit empty.
-        // The caption is a div, not a <label> around the select: a label sends its
-        // control a second click, which in Firefox closes the menu the first one
-        // opened. aria-label keeps the select named.
+        // The caption is the select's own floating label, as on the text fields,
+        // so a select lines up with a text field beside it. Never a <label>
+        // around the select: a label sends its control a second click, which in
+        // Firefox closes the menu the first one opened.
         return html`
-            <div class="label">
-                ${field.label}
-                <md-outlined-select
-                    name="column-${i}"
-                    aria-label=${field.label ?? nothing}
-                    .value=${field.preFilledValue ?? field.defaultValue ?? ''}
-                    supporting-text=${field.description ?? ''}
-                    ?required=${field.required && !field.defaultValue && !field.preFilledValue}
-                >
-                    ${repeat(
-                        field.values ?? [],
-                        (val) => val.value,
-                        (val) => {
-                            return html`
-                                <md-select-option .value="${val.value ?? ''}">
-                                    ${val.displayLabel}
-                                </md-select-option>
-                            `
-                        }
-                    )}
-                </md-outlined-select>
-            </div>
+            <md-outlined-select
+                class=${layout}
+                name="column-${i}"
+                .label=${field.label ?? ''}
+                aria-label=${field.label ?? nothing}
+                .value=${field.preFilledValue ?? field.defaultValue ?? ''}
+                supporting-text=${field.description ?? ''}
+                ?required=${field.required && !field.defaultValue && !field.preFilledValue}
+            >
+                ${repeat(
+                    field.values ?? [],
+                    (val) => val.value,
+                    (val) => {
+                        return html`
+                            <md-select-option .value="${val.value ?? ''}">
+                                ${val.displayLabel}
+                            </md-select-option>
+                        `
+                    }
+                )}
+            </md-outlined-select>
         `
     }
 
-    renderDateTimeField(field: Column, i: number) {
+    renderDateTimeField(field: Column, i: number, layout: string) {
         return html`
             <md-outlined-text-field
+                class="fixed-width ${layout}"
                 .name="column-${i}"
-                style="width: 200px;"
                 .label="${field.label ?? ''}"
                 type="datetime-local"
                 .value="${field.preFilledValue ?? field.defaultValue ?? ''}"
@@ -1221,7 +1339,7 @@ export class WidgetForm extends LitElement {
     // empty and knows only #rrggbb. The values are shown as hex, the way they
     // are stored, and an empty field's swatch shows its default colour, which
     // a save stores then.
-    renderColorField(field: Column, i: number) {
+    renderColorField(field: Column, i: number, layout: string) {
         const preFilledValue = this.effectivePreFilledValue(field)
         const defaultValue = this.effectiveDefaultValue(field)
         const typed = this.typedColors[i]
@@ -1229,9 +1347,9 @@ export class WidgetForm extends LitElement {
         const shown = colorHex(text.trim() ? text : defaultValue)
         return html`
             <md-outlined-text-field
+                class="fixed-width ${layout}"
                 .name="column-${i}"
                 .label="${field.label ?? ''}"
-                style="width: 200px;"
                 .value="${colorHex(preFilledValue) ?? preFilledValue ?? ''}"
                 .placeholder="${colorHex(defaultValue) ?? defaultValue ?? ''}"
                 supporting-text=${field.description ?? ''}
@@ -1308,7 +1426,7 @@ export class WidgetForm extends LitElement {
     // -webkit-text-security (patchSecretFields()), autocomplete="off" keeps
     // the value out of the browser's form history, and copying is blocked
     // while it is masked, as a password input does.
-    renderSecretField(field: Column, i: number) {
+    renderSecretField(field: Column, i: number, layout: string) {
         const revealed = !!this.revealedSecrets[i]
         const managed = field.browserPasswordManager === true
         const masked = !managed && !revealed
@@ -1318,7 +1436,7 @@ export class WidgetForm extends LitElement {
         }
         return html`
             <md-outlined-text-field
-                class=${managed ? 'secret' : 'secret unmanaged'}
+                class="${managed ? 'secret' : 'secret unmanaged'} ${layout}"
                 ?masked=${masked}
                 .name="column-${i}"
                 .label="${field.label ?? ''}"
@@ -1348,7 +1466,7 @@ export class WidgetForm extends LitElement {
     // and the browser's message sit on the box. The box shows the new file,
     // or else the record's current file (the pre-filled key, whose last
     // segment is the file's name).
-    renderFileField(field: Column, i: number) {
+    renderFileField(field: Column, i: number, layout: string) {
         const accepted = acceptedTypes(field.acceptedFileTypes)
         const max = maxFileBytes(field)
         const file = this.chosenFiles[i]
@@ -1375,7 +1493,7 @@ export class WidgetForm extends LitElement {
             if (disabled) event.preventDefault()
         }
         return html`
-            <div class="label file-field">
+            <div class="label file-field ${layout}">
                 <span>${field.label}${required ? ' *' : ''}</span>
                 <div
                     class="file-box"
@@ -1419,6 +1537,18 @@ export class WidgetForm extends LitElement {
                 <span id="file-hint-${i}" class="supporting-text ${error ? 'error' : ''}"
                     >${error || field.description || ''}</span
                 >
+            </div>
+        `
+    }
+
+    // A heading across the row that groups the fields after it, with the Hint
+    // Text under it. h4 and a div rather than h3 and p: the shadow root styles
+    // those for the form's own title and subtitle.
+    renderSection(field: Column) {
+        return html`
+            <div class="section">
+                ${field.label ? html`<h4>${field.label}</h4>` : nothing}
+                ${field.description ? html`<div class="section-hint">${field.description}</div>` : nothing}
             </div>
         `
     }
@@ -1552,9 +1682,10 @@ export class WidgetForm extends LitElement {
 
         /* The dialog classes */
         .form {
-            /* Fields are stacked in a single column, so a wide dialog just
-               stretches them unreadably. Cap at a comfortable form width but
-               shrink to fit narrow viewports. Height stays content-driven
+            /* Fields take a full row unless the Field Layout or their Width
+               says otherwise, so a wide dialog would just stretch most forms
+               unreadably. Cap at a comfortable form width but shrink to fit
+               narrow viewports. Height stays content-driven
                (Material's fit-content), capped at 80% of the viewport. A Form
                Dialog Size minimum goes inline on md-dialog (dialogSizeStyle)
                and wins over both whenever it is larger. */
@@ -1579,19 +1710,93 @@ export class WidgetForm extends LitElement {
             flex-wrap: wrap;
         }
 
-        .form-content,
-        .form-row {
-            display: flex;
-            gap: 8px;
-        }
-
+        /* The fields sit on a 12-column grid and fill it left to right in
+           field order; a field that does not fit on the current row starts
+           the next one. Each spans a full row unless its Width or the Field
+           Layout says otherwise, which is the single column every form had
+           before. align-items: start keeps a field from being stretched to
+           the height of a taller one beside it (md-outlined-text-field fills
+           whatever height it gets, so its outline would grow). The form is
+           a size container: the collapse rules render() adds (collapseRules())
+           measure it, so the layout follows the tile or the dialog without a
+           ResizeObserver. */
         .form-content {
-            flex-direction: column;
-            gap: 24px;
+            display: grid;
+            grid-template-columns: repeat(12, minmax(0, 1fr));
+            column-gap: 16px;
+            row-gap: 24px;
+            align-items: start;
+            container-type: inline-size;
         }
 
-        .form-row > * {
-            flex: 1;
+        /* Longhands, so that .new-row's start line survives. */
+        .w-full {
+            grid-column-end: span 12;
+        }
+        .w-three-quarters {
+            grid-column-end: span 9;
+        }
+        .w-two-thirds {
+            grid-column-end: span 8;
+        }
+        .w-half {
+            grid-column-end: span 6;
+        }
+        .w-third {
+            grid-column-end: span 4;
+        }
+        .w-quarter {
+            grid-column-end: span 3;
+        }
+
+        .new-row {
+            grid-column-start: 1;
+        }
+
+        /* Number, date and colour fields keep the 200px they always had on a
+           full row, shrinking with a narrower form; on part of a row they
+           fill their share of it. */
+        .form-content > .fixed-width.w-full {
+            width: 200px;
+            max-width: 100%;
+        }
+
+        /* A checkbox on part of a row sits in the middle of the 56px of the
+           text fields' boxes beside it. On a row of its own it keeps the
+           height it always had. */
+        .form-content > .checkbox-container:not(.w-full) {
+            min-height: 56px;
+        }
+
+        /* A section heading spans the row, set off by a line from the fields
+           above it, unless it is the first thing in the form. The negative
+           margin brings its group 8px closer than the grid's row gap. */
+        .form-content > .section {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding-top: 16px;
+            margin-bottom: -8px;
+            border-top: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+        }
+
+        .form-content > .section:first-child {
+            padding-top: 0;
+            border-top: none;
+        }
+
+        .section h4 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            line-height: 24px;
+        }
+
+        .section-hint {
+            font-size: 14px;
+            line-height: 20px;
+            color: var(--md-sys-color-on-surface-variant);
         }
 
         .checkbox-container {
@@ -1623,8 +1828,11 @@ export class WidgetForm extends LitElement {
             color: var(--md-sys-color-on-surface-variant);
         }
 
+        /* Material gives the select a 210px minimum, which pushed a select on
+           part of a row into its neighbour; its share of the row (at least
+           the Minimum Field Width) is the minimum now. */
         md-outlined-select {
-            flex: 1;
+            min-width: 0;
         }
 
         .file-field {
@@ -1792,6 +2000,81 @@ export class WidgetForm extends LitElement {
             --md-filled-button-focus-label-text-color: #fff;
             --md-filled-button-pressed-label-text-color: #fff;
         }
+
+        /* Density compact (updated() sets the attribute): fields 40px high
+           instead of Material's 56 (8px above and below the 24px line instead
+           of 16) with 14px text, 32px buttons, smaller icon buttons and
+           checkbox halos, and tighter gaps. A text field has tokens of its
+           own; a select's inner field reads the outlined field's tokens
+           directly. The column gap is COMPACT_FIELD_GAP, which the collapse
+           rules are computed with. The open button keeps its own Size. */
+        :host([compact]) {
+            --md-outlined-text-field-top-space: 8px;
+            --md-outlined-text-field-bottom-space: 8px;
+            --md-outlined-text-field-leading-space: 12px;
+            --md-outlined-text-field-trailing-space: 12px;
+            --md-outlined-text-field-input-text-size: 14px;
+            --md-outlined-text-field-label-text-size: 14px;
+            --md-outlined-field-top-space: 8px;
+            --md-outlined-field-bottom-space: 8px;
+            --md-outlined-field-leading-space: 12px;
+            --md-outlined-field-trailing-space: 12px;
+            --md-outlined-select-text-field-input-text-size: 14px;
+            --md-outlined-select-text-field-label-text-size: 14px;
+            --md-icon-button-state-layer-height: 32px;
+            --md-icon-button-state-layer-width: 32px;
+            --md-icon-button-icon-size: 20px;
+            --md-checkbox-state-layer-size: 32px;
+            --md-filled-button-container-height: 32px;
+            --md-outlined-button-container-height: 32px;
+        }
+
+        :host([compact]) .form-content {
+            row-gap: 16px;
+            column-gap: 12px;
+        }
+
+        :host([compact]) .form-content > .checkbox-container:not(.w-full) {
+            min-height: 40px;
+        }
+
+        :host([compact]) .checkbox-container .label,
+        :host([compact]) .file-field > span:first-child,
+        :host([compact]) .file-name {
+            font-size: 14px;
+        }
+
+        :host([compact]) .form-content > .section:not(:first-child) {
+            padding-top: 12px;
+        }
+
+        :host([compact]) .form-content > .section {
+            margin-bottom: -4px;
+        }
+
+        :host([compact]) .section h4 {
+            font-size: 14px;
+            line-height: 20px;
+        }
+
+        :host([compact]) .section-hint {
+            font-size: 12px;
+            line-height: 16px;
+        }
+
+        :host([compact]) .file-box {
+            min-height: 40px;
+            padding: 4px 4px 4px 12px;
+        }
+
+        :host([compact]) .color-swatch {
+            width: 20px;
+            height: 20px;
+        }
+
+        :host([compact]) .form-actions {
+            margin-top: 12px;
+        }
     `
 
     /**
@@ -1844,6 +2127,14 @@ export class WidgetForm extends LitElement {
                   (size) => `--md-fab-${size}container-shape: ${buttonStyle.cornerRadius};`
               ).join(' ')
             : ''
+        // Fields widen in a form too narrow for them; the thresholds follow
+        // the Minimum Field Width and the density's gap, so the rules are
+        // written here.
+        const layoutSettings = fieldLayoutSettings(this.inputData?.fieldLayout)
+        const collapse = collapseRules(
+            layoutSettings.minFieldWidth,
+            layoutSettings.compact ? COMPACT_FIELD_GAP : FIELD_GAP
+        )
         return html`
             <style>
                 :host {
@@ -1880,6 +2171,7 @@ export class WidgetForm extends LitElement {
                     --md-outlined-button-pressed-state-layer-color: ${fontColor};
                     color: ${fontColor};
                 }
+                ${collapse}
             </style>
             <div class="header">
                 ${this.inputData?.formButton
@@ -2029,6 +2321,8 @@ export class WidgetForm extends LitElement {
     }
 
     renderForm() {
+        const fields = this.inputData?.formFields ?? []
+        const widths = fieldWidths(fields, fieldLayoutSettings(this.inputData?.fieldLayout).defaultWidth)
         return keyed(
             this.formKey,
             html`
@@ -2042,30 +2336,32 @@ export class WidgetForm extends LitElement {
                     @change=${this.handleFieldChange}
                 >
                     ${repeat(
-                        this.inputData?.formFields ?? [],
+                        fields,
                         (field, i) => i,
                         (field, i) => {
-                            if (field.hiddenField) return nothing
-                            if (!this.isFieldVisible(field)) return nothing
+                            if (!field || field.hiddenField) return nothing
+                            if (!this.isFieldVisible(field, i)) return nothing
+                            if (isSection(field)) return this.renderSection(field)
+                            const layout = `w-${widths[i]}${field.newRow === true ? ' new-row' : ''}`
                             switch (field.type) {
                                 case 'textfield':
-                                    return this.renderTextField(field, i)
+                                    return this.renderTextField(field, i, layout)
                                 case 'numberfield':
-                                    return this.renderNumberField(field, i)
+                                    return this.renderNumberField(field, i, layout)
                                 case 'datetime':
-                                    return this.renderDateTimeField(field, i)
+                                    return this.renderDateTimeField(field, i, layout)
                                 case 'textarea':
-                                    return this.renderTextArea(field, i)
+                                    return this.renderTextArea(field, i, layout)
                                 case 'dropdown':
-                                    return this.renderDropdown(field, i)
+                                    return this.renderDropdown(field, i, layout)
                                 case 'checkbox':
-                                    return this.renderCheckbox(field, i)
+                                    return this.renderCheckbox(field, i, layout)
                                 case 'file':
-                                    return this.renderFileField(field, i)
+                                    return this.renderFileField(field, i, layout)
                                 case 'secret':
-                                    return this.renderSecretField(field, i)
+                                    return this.renderSecretField(field, i, layout)
                                 case 'color':
-                                    return this.renderColorField(field, i)
+                                    return this.renderColorField(field, i, layout)
                             }
                         }
                     )}

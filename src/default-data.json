@@ -2,13 +2,15 @@
     "title": "Example Input Form",
     "subTitle": "Please provide machine details",
     "formButton": false,
+    "fieldLayout": {
+        "density": "compact"
+    },
     "formFields": [
         {
             "label": "Machine Type",
             "type": "dropdown",
-            "hiddenField": false,
+            "width": "half",
             "description": "Select machine type from list",
-            "targetColumn": "machineType",
             "defaultValue": "pump",
             "values": [
                 {
@@ -28,9 +30,8 @@
         {
             "label": "Machine Name",
             "type": "textfield",
-            "hiddenField": false,
+            "width": "half",
             "description": "Enter the name of the machine",
-            "targetColumn": "name",
             "validation": "^[a-zA-Z0-9 ]{3,50}$",
             "defaultValue": "Pump A1",
             "required": true
@@ -38,11 +39,10 @@
         {
             "label": "Operating Temperature",
             "type": "numberfield",
-            "hiddenField": false,
+            "width": "half",
             "min": 0,
             "max": 100,
-            "description": "Current operating temperature in °C",
-            "targetColumn": "temperature",
+            "description": "Current operating temperature",
             "defaultValue": "68.5",
             "conditionalDisplay": {
                 "conditionField": "Machine Type",
@@ -52,25 +52,27 @@
         {
             "label": "Active",
             "type": "checkbox",
-            "hiddenField": false,
+            "width": "half",
             "description": "Check if the machine is active",
-            "targetColumn": "isActive",
             "defaultValueBoolean": true
+        },
+        {
+            "label": "Maintenance",
+            "type": "section",
+            "groupWidth": "half",
+            "description": "Notes and the last service"
         },
         {
             "label": "Description",
             "type": "textarea",
-            "hiddenField": false,
+            "width": "full",
             "description": "Provide additional notes or comments",
-            "targetColumn": "description",
             "defaultValueMultiline": "No issues reported."
         },
         {
             "label": "Last Maintenance",
             "type": "datetime",
-            "hiddenField": false,
             "description": "Date and time of the last maintenance",
-            "targetColumn": "lastMaintenance",
             "defaultValue": "2025-07-07T08:30:00Z"
         }
     ]

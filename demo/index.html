@@ -61,7 +61,11 @@
             // button with this Label Text, Floating Action Button off; empty for
             // only the icon), ?size=small|medium|large (its size), ?radius=<px>
             // (its Corner Radius), ?accent=<colour> (Highlight Color), ?oldhost
-            // (a Studio that does not know file-data-submit).
+            // (a Studio that does not know file-data-submit), ?layout (a Field
+            // Layout, below), ?layout=none (no widths, new rows, sections or
+            // density: the single column of 1.0.47 and earlier),
+            // ?density=comfortable|compact (Material's 56px fields, or the 40px
+            // ones a new form starts with; combines with the others).
             const params = new URLSearchParams(location.search)
             const themes = { light, chalk, vintage }
             const themeName = themes[params.get('theme')] ? params.get('theme') : 'light'
@@ -71,6 +75,99 @@
             // seeds every new form tile; the demo adds two of each (the second
             // file field pre-filled, the colours a pre-filled one and a
             // translucent default).
+            const demoFields = [
+                ...defaultData.formFields,
+                {
+                    label: 'Document',
+                    type: 'file',
+                    required: true,
+                    description: 'A file whose name contains "fail" is refused by the demo host',
+                    fileNamespace: 'documents',
+                    acceptedFileTypes: 'application/pdf, image/*',
+                    maxFileSizeMB: 6,
+                    fileUrlColumn: { tablename: 'documents', column: 'file_url' }
+                },
+                {
+                    label: 'Attachment',
+                    type: 'file',
+                    fileNamespace: 'documents',
+                    preFilledValue: '2026-10-15/k3x9q2m7a1/Maintenance report.pdf'
+                },
+                {
+                    label: 'Device Password',
+                    type: 'secret',
+                    required: true,
+                    description: 'At least 8 characters; the browser may offer to save it',
+                    validation: '^.{8,}$',
+                    validationMessage: 'Use at least 8 characters.',
+                    browserPasswordManager: true
+                },
+                {
+                    label: 'PIN',
+                    type: 'secret',
+                    description: '4 digits',
+                    validation: '^[0-9]{4}$',
+                    validationMessage: 'Enter exactly 4 digits.'
+                },
+                {
+                    label: 'Line Color',
+                    type: 'color',
+                    required: true,
+                    description: 'Pick one or type it, such as teal',
+                    preFilledValueColor: '#E53935'
+                },
+                {
+                    label: 'Fill Color',
+                    type: 'color',
+                    description: 'Left empty, the default is saved',
+                    defaultValueColor: 'rgba(30, 136, 229, 0.5)'
+                }
+            ]
+
+            // ?layout: Default Field Width ?width= (half unless given) and
+            // Minimum Field Width ?minw=, a section shown only for compressors
+            // (its Field Width in Group makes its fields quarters, one of them
+            // on a new row), and pairs that must stay on one row as the form
+            // narrows (three quarters + a quarter, two thirds + a third).
+            const layout = params.get('layout')
+            const widths = {
+                Description: 'full',
+                Document: 'two-thirds',
+                Attachment: 'third',
+                'Device Password': 'three-quarters',
+                PIN: 'quarter',
+                'Line Color': 'quarter',
+                'Fill Color': 'quarter'
+            }
+            const compressorGroup = [
+                {
+                    label: 'Compressor settings',
+                    type: 'section',
+                    description: 'Shown for compressors only',
+                    groupWidth: 'quarter',
+                    conditionalDisplay: { conditionField: 'Machine Type', conditionValues: 'compressor' }
+                },
+                { label: 'Stages', type: 'numberfield', min: 1, max: 4 },
+                { label: 'Pressure', type: 'numberfield', description: 'bar' },
+                { label: 'Oil-free', type: 'checkbox', newRow: true }
+            ]
+            const formFields =
+                layout === 'none'
+                    ? demoFields
+                          .filter((field) => field.type !== 'section')
+                          .map(({ width, newRow, groupWidth, ...field }) => field)
+                    : demoFields.flatMap((field) => {
+                          // The demo's own fields get a section of their own, or
+                          // they would join the default config's Maintenance
+                          // group and take its width.
+                          const attachments = { label: 'Attachments and access', type: 'section' }
+                          if (layout === null) return field.label === 'Document' ? [attachments, field] : [field]
+                          const placed = widths[field.label] ? { ...field, width: widths[field.label] } : field
+                          if (field.label === 'Maintenance') return [...compressorGroup, placed]
+                          if (field.label === 'Document') return [attachments, placed]
+                          return [placed]
+                      })
+
             const data = {
                 ...defaultData,
                 formButton: params.has('dialog'),
@@ -82,54 +179,12 @@
                     iconName: params.get('icon') ?? undefined
                 },
                 accentColor: params.get('accent') ?? undefined,
-                formFields: [
-                    ...defaultData.formFields,
-                    {
-                        label: 'Document',
-                        type: 'file',
-                        required: true,
-                        description: 'A file whose name contains "fail" is refused by the demo host',
-                        fileNamespace: 'documents',
-                        acceptedFileTypes: 'application/pdf, image/*',
-                        maxFileSizeMB: 6,
-                        fileUrlColumn: { tablename: 'documents', column: 'file_url' }
-                    },
-                    {
-                        label: 'Attachment',
-                        type: 'file',
-                        fileNamespace: 'documents',
-                        preFilledValue: '2026-10-15/k3x9q2m7a1/Maintenance report.pdf'
-                    },
-                    {
-                        label: 'Device Password',
-                        type: 'secret',
-                        required: true,
-                        description: 'At least 8 characters; the browser may offer to save it',
-                        validation: '^.{8,}$',
-                        validationMessage: 'Use at least 8 characters.',
-                        browserPasswordManager: true
-                    },
-                    {
-                        label: 'PIN',
-                        type: 'secret',
-                        description: '4 digits',
-                        validation: '^[0-9]{4}$',
-                        validationMessage: 'Enter exactly 4 digits.'
-                    },
-                    {
-                        label: 'Line Color',
-                        type: 'color',
-                        required: true,
-                        description: 'Pick one or type it, such as teal',
-                        preFilledValueColor: '#E53935'
-                    },
-                    {
-                        label: 'Fill Color',
-                        type: 'color',
-                        description: 'Left empty, the default is saved',
-                        defaultValueColor: 'rgba(30, 136, 229, 0.5)'
-                    }
-                ]
+                fieldLayout: {
+                    defaultWidth: layout === null || layout === 'none' ? undefined : params.get('width') || 'half',
+                    minFieldWidth: params.has('minw') ? Number(params.get('minw')) : undefined,
+                    density: params.get('density') ?? (layout === 'none' ? undefined : defaultData.fieldLayout?.density)
+                },
+                formFields
             }
 
             const tag = unsafeStatic(`widget-form-${packageJson.version}`)
