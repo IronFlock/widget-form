@@ -3,7 +3,7 @@
     "description": "REWidget widget-form",
     "license": "MIT",
     "author": "widget-form",
-    "version": "1.0.47",
+    "version": "1.1.0",
     "engines": {
         "node": ">=24.9.0",
         "npm": ">=10.0.2"
