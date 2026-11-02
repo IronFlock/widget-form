@@ -17,6 +17,7 @@ import '@material/web/checkbox/checkbox.js'
 import '@material/web/select/outlined-select.js'
 import '@material/web/select/select-option.js'
 import '@material/web/iconbutton/icon-button.js'
+import '@material/web/progress/linear-progress.js'
 
 import type { MdDialog } from '@material/web/dialog/dialog.js'
 
@@ -288,6 +289,30 @@ const dialogMinSize = (dimension: 'width' | 'height', raw: unknown): string => {
 const dialogSizeStyle = (size: FormConfiguration['formDialogSize']) => {
     const declarations = [dialogMinSize('width', size?.minWidth), dialogMinSize('height', size?.minHeight)]
     return declarations.filter(Boolean).join('; ') || nothing
+}
+
+// The URL parameter that opens the form (Open on URL parameter), trimmed, or
+// undefined while the setting is off: blank, not text, or without the Form Open
+// Button it belongs to. Studio does not evaluate the schema's condition, so a
+// stale value can arrive with the button off.
+const openParameterKey = (data?: FormConfiguration): string | undefined => {
+    if (!data?.formButton || typeof data.openParameter !== 'string') return undefined
+    return data.openParameter.trim() || undefined
+}
+
+// The value of a URL parameter in the route Studio passes (the page path with
+// its ?query), or null when it is absent or there is no route. An empty value
+// is present.
+const routeParameter = (route: unknown, key: string): string | null =>
+    typeof route === 'string' ? new URLSearchParams(route.split('?')[1] ?? '').get(key) : null
+
+// The path with the parameter deleted on arrival: Studio drops a key whose
+// value is empty when it merges a nav-submit path's query into the page URL.
+const pathDeletingParameter = (path: string, key: string): string => {
+    const at = path.indexOf('?')
+    const params = new URLSearchParams(at < 0 ? '' : path.slice(at + 1))
+    params.set(key, '')
+    return `${at < 0 ? path : path.slice(0, at)}?${params.toString()}`
 }
 
 // The share of a row a field takes, as Width and Default Field Width name it.
@@ -676,6 +701,36 @@ export class WidgetForm extends LitElement {
 
     @state() dialogOpen: boolean = false
 
+    // The dialog's form exists only while the native <dialog> is shown. Inside
+    // a closed dialog it has no layout, and a Material field whose label floats
+    // or rests after its first render (a select once its options arrive, a date
+    // field once flatpickr fills it, a changed pre-filled value) animates the
+    // label from measured rects, 0 / 0 there: "Invalid keyframe value ...
+    // translateY(NaNpx) scale(NaN)" on every such change. Mounted on md-dialog's
+    // open event, which it fires right before showModal(), so the form's first
+    // render already has layout, and unmounted as the dialog closes: the
+    // reset that comes with a close would otherwise rebuild the fields inside
+    // the closing dialog (quick, so it is gone at once).
+    @state() private dialogContentMounted = false
+
+    // While a dialog opened by the URL parameter waits for the record it names:
+    // Studio re-queries the pre-filled values after a route change, and the
+    // ones at hand may still be the previous record's.
+    @state() private awaitingRecord = false
+
+    // The parameter that opened the dialog and its value then, while the dialog
+    // is open by it: what releaseOpenParameter() removes from the URL. Keyed at
+    // open time, so a renamed setting cannot remove the wrong key.
+    private openedBy?: { key: string; value: string }
+
+    // The parameter value last seen in the route (null: absent), so a route
+    // change that leaves it alone changes nothing.
+    private seenParameter: string | null = null
+
+    // A route or data change arrived while the host was saving files; the
+    // sync runs once the save has settled.
+    private resyncAfterSubmit = false
+
     @query('md-dialog') dialog!: MdDialog
 
     @state() private formKey = 0
@@ -719,7 +774,8 @@ export class WidgetForm extends LitElement {
         super.update(changedProperties)
     }
 
-    protected willUpdate(): void {
+    protected willUpdate(changed: PropertyValues<this>): void {
+        if (changed.has('route') || changed.has('inputData')) this.syncOpenParameter(changed)
         // A file or colour field that a condition hides loses its input
         // element, and with it the file or the typed colour; drop that here
         // too, so the field comes back as it started instead of showing what
@@ -743,6 +799,112 @@ export class WidgetForm extends LitElement {
 
     protected firstUpdated(_changedProperties: PropertyValues): void {
         this.registerTheme(this.theme)
+    }
+
+    connectedCallback() {
+        super.connectedCallback()
+        // Studio moves a tile by detaching and re-attaching it in one task. The
+        // native <dialog> then leaves the top layer but keeps its open
+        // attribute, and md-dialog's show() returns early while it is set:
+        // close it and show it again, so a dialog open while a board is edited
+        // stays modal. The form and what was typed survive the move, and a
+        // native close that no Escape preceded fires no closed event.
+        if (this.hasUpdated && this.dialogOpen) {
+            const native = this.dialog?.shadowRoot?.querySelector('dialog')
+            if (native?.open) {
+                native.close()
+                void this.dialog.show()
+            }
+        }
+    }
+
+    /**
+     * Open on URL parameter: keep the dialog in step with the route. The
+     * parameter appearing or changing (another row's edit button) opens the
+     * dialog on the current pre-filled values; its disappearing (the dialog's
+     * own release, the browser's back button, the setting switched off) closes
+     * it. A dialog opened by a route change this element witnessed waits for
+     * the next inputData, which Studio sends after every route change once it
+     * has re-queried the bindings: the values at hand may still be the
+     * previous record's. On the first update (a bookmarked URL) the first
+     * inputData was already resolved against that URL, and Studio promises no
+     * second one, so the dialog opens at once; so it does when the setting
+     * arrives with the data, and in a sync deferred past a save (no changes).
+     */
+    private syncOpenParameter(changed?: PropertyValues<this>) {
+        if (this.submitting) {
+            this.resyncAfterSubmit = true
+            return
+        }
+        const key = openParameterKey(this.inputData)
+        const value = key === undefined ? null : routeParameter(this.route, key)
+        if (value === null) {
+            this.seenParameter = null
+            if (!this.openedBy) return
+            this.openedBy = undefined
+            this.awaitingRecord = false
+            this.resetForm()
+            this.dialogContentMounted = false
+            this.dialogOpen = false
+            return
+        }
+        if (value !== this.seenParameter) {
+            this.seenParameter = value
+            this.openedBy = { key: key as string, value }
+            this.awaitingRecord = !!changed?.has('route') && changed.get('route') !== undefined
+            this.resetForm()
+            this.dialogOpen = true
+            return
+        }
+        if (this.awaitingRecord && changed?.has('inputData')) {
+            this.awaitingRecord = false
+            this.resetForm()
+        }
+    }
+
+    /**
+     * Forget the parameter that opened the dialog and, when asked, have Studio
+     * remove it from the URL, so the same row can open the dialog again and a
+     * reload or a shared link does not open it. Only while the URL still holds
+     * the value that opened the dialog: one the user changed meanwhile (a row
+     * clicked during an upload) is theirs to keep. Idempotent, so the explicit
+     * paths and the dialog's closed event can both call it.
+     */
+    private releaseOpenParameter(removeFromUrl: boolean) {
+        const opened = this.openedBy
+        this.openedBy = undefined
+        this.awaitingRecord = false
+        if (!opened || !removeFromUrl || routeParameter(this.route, opened.key) !== opened.value) return
+        this.dispatchEvent(
+            new CustomEvent('param-submit', {
+                detail: { params: { [opened.key]: undefined } },
+                bubbles: true,
+                composed: true
+            })
+        )
+    }
+
+    // Close the dialog after a save, a delete or Cancel: back to the pre-filled
+    // values, and the parameter that opened it released, unless a navigation
+    // takes it along already (Delete with a route).
+    private closeDialog({ navigated = false } = {}) {
+        this.resetForm()
+        this.releaseOpenParameter(!navigated)
+        this.dialogContentMounted = false
+        this.dialogOpen = false
+    }
+
+    // md-dialog's closed event, after any close: the fallback that releases
+    // the parameter when the dialog closed on its own; a no-op after Cancel, a
+    // save or a delete, which released it already.
+    private handleDialogClosed() {
+        this.dialogOpen = false
+        this.dialogContentMounted = false
+        this.releaseOpenParameter(true)
+    }
+
+    private handleDialogOpen() {
+        this.dialogContentMounted = true
     }
 
     protected updated(_changedProperties: PropertyValues): void {
@@ -921,18 +1083,24 @@ export class WidgetForm extends LitElement {
                 variables: this.inputData?.variables
             })
             if (deleteRoute) {
+                // The parameter that opened the dialog leaves with the
+                // navigation, in its one history entry: a param-submit of its
+                // own would race the navigation and push the old page without
+                // it. Studio drops a key whose value is empty.
+                const opened = this.openedBy
+                const path =
+                    opened && routeParameter(this.route, opened.key) === opened.value
+                        ? pathDeletingParameter(String(deleteRoute), opened.key)
+                        : String(deleteRoute)
                 this.dispatchEvent(
-                    new CustomEvent('nav-submit', {
-                        detail: { path: String(deleteRoute) },
-                        bubbles: true,
-                        composed: true
-                    })
+                    new CustomEvent('nav-submit', { detail: { path }, bubbles: true, composed: true })
                 )
+                this.closeDialog({ navigated: true })
+                return
             }
         }
 
-        this.resetForm()
-        this.dialogOpen = false
+        this.closeDialog()
     }
 
     // The columns a file field writes beside the key, with what each gets.
@@ -1015,13 +1183,16 @@ export class WidgetForm extends LitElement {
         this.submitError = ''
         try {
             await outcome
-            this.resetForm()
-            this.dialogOpen = false
+            this.closeDialog()
         } catch (err) {
             const message = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
             this.submitError = message || 'The file could not be saved. Nothing was written.'
         } finally {
             this.submitting = false
+            if (this.resyncAfterSubmit) {
+                this.resyncAfterSubmit = false
+                this.syncOpenParameter()
+            }
         }
     }
 
@@ -1581,7 +1752,8 @@ export class WidgetForm extends LitElement {
             }
         }
         if (route.includes('*')) {
-            const currentSegments = (this.route || '').split('/').filter(Boolean)
+            // The route carries the page's ?query, which is no segment.
+            const currentSegments = (this.route || '').split('?')[0].split('/').filter(Boolean)
             const routeSegments = route.split('/').filter(Boolean)
             for (let i = 0; i < routeSegments.length; i++) {
                 if (routeSegments[i] === '*') {
@@ -1594,8 +1766,7 @@ export class WidgetForm extends LitElement {
     }
 
     cancelEdit(event: Event) {
-        this.resetForm()
-        this.dialogOpen = false
+        this.closeDialog()
     }
 
     static styles = css`
@@ -1979,6 +2150,11 @@ export class WidgetForm extends LitElement {
             overflow: visible;
         }
 
+        /* The record a parameter-opened dialog waits for is on its way. */
+        md-linear-progress {
+            margin-bottom: 16px;
+        }
+
         .header {
             display: flex;
             align-items: center;
@@ -2122,6 +2298,10 @@ export class WidgetForm extends LitElement {
         const buttonStyle = openButtonStyle(this.inputData?.formButtonStyle)
         const title = this.inputData?.title
         const fabLabel = typeof title === 'string' && title.trim() ? title.trim() : 'Open form'
+        // Open on URL parameter replaces the button on a board. Without a
+        // route (the editor's preview, the AI chat) the button stays, so the
+        // form can be tried there.
+        const parameterOpens = this.route !== undefined && openParameterKey(this.inputData) !== undefined
         const fabShape = buttonStyle.cornerRadius
             ? FAB_SHAPE_SIZES.map(
                   (size) => `--md-fab-${size}container-shape: ${buttonStyle.cornerRadius};`
@@ -2174,7 +2354,7 @@ export class WidgetForm extends LitElement {
                 ${collapse}
             </style>
             <div class="header">
-                ${this.inputData?.formButton
+                ${this.inputData?.formButton && !parameterOpens
                     ? !buttonStyle.fab
                         ? this.renderOpenButton(buttonStyle, fabLabel, bgColorOpaque)
                         : html`
@@ -2247,10 +2427,18 @@ export class WidgetForm extends LitElement {
                           @keydown=${(event: any) => {
                               if (event.key === 'Escape') event.preventDefault()
                           }}
-                          @closed=${() => (this.dialogOpen = false)}
+                          @open=${this.handleDialogOpen}
+                          @closed=${this.handleDialogClosed}
                       >
                           <div slot="headline">${this.inputData?.title ?? 'Data Entry'}</div>
-                          ${this.renderForm()}
+                          ${this.awaitingRecord
+                              ? html`<md-linear-progress
+                                    slot="content"
+                                    indeterminate
+                                    aria-label="Loading the record"
+                                ></md-linear-progress>`
+                              : nothing}
+                          ${this.dialogContentMounted ? this.renderForm() : nothing}
                           <div slot="actions">
                               ${this.renderSubmitError()}
                               ${this.inputData?.deleteButton
@@ -2259,11 +2447,13 @@ export class WidgetForm extends LitElement {
                                         form="form"
                                         value="delete"
                                         type="submit"
-                                        ?disabled=${this.submitting}
+                                        ?disabled=${this.submitting || this.awaitingRecord}
                                         >Delete</md-filled-button
                                     >`
                                   : nothing}
-                              <md-outlined-button ?disabled=${this.submitting} @click=${this.resetForm}
+                              <md-outlined-button
+                                  ?disabled=${this.submitting || this.awaitingRecord}
+                                  @click=${this.resetForm}
                                   >Reset</md-outlined-button
                               >
                               <md-outlined-button ?disabled=${this.submitting} @click=${this.cancelEdit}
@@ -2273,7 +2463,7 @@ export class WidgetForm extends LitElement {
                                   form="form"
                                   value="submit"
                                   type="submit"
-                                  ?disabled=${this.submitting}
+                                  ?disabled=${this.submitting || this.awaitingRecord}
                                   autofocus
                                   >${this.submitting ? 'Saving…' : 'Submit'}</md-filled-button
                               >
@@ -2331,6 +2521,7 @@ export class WidgetForm extends LitElement {
                     slot="content"
                     method="dialog"
                     class="form-content"
+                    ?inert=${this.awaitingRecord}
                     @submit=${this.handleFormSubmit}
                     @input=${this.handleFieldChange}
                     @change=${this.handleFieldChange}

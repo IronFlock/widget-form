@@ -29,6 +29,22 @@
 
             .widget {
             }
+
+            /* The ?open= stand-in for a table's edit buttons, out of the
+               global sizing rule above. */
+            .toolbar,
+            .toolbar * {
+                width: auto;
+                height: auto;
+            }
+            .toolbar {
+                position: fixed;
+                top: 8px;
+                right: 8px;
+                display: flex;
+                gap: 8px;
+                z-index: 1;
+            }
         </style>
         <link
             rel="preload"
@@ -65,8 +81,15 @@
             // Layout, below), ?layout=none (no widths, new rows, sections or
             // density: the single column of 1.0.47 and earlier),
             // ?density=comfortable|compact (Material's 56px fields, or the 40px
-            // ones a new form starts with; combines with the others).
+            // ones a new form starts with; combines with the others),
+            // ?open=<key> (Open on URL parameter, with the Form Open Button: the
+            // demo then passes a route like Studio does, the page path with its
+            // ?query, so ...&open=edit&edit=press-1 is the bookmark case; two
+            // "Edit" buttons set the parameter like a table's edit column, and
+            // a new inputData follows every route change 800 ms later, as the
+            // re-queried bindings would, naming the record in Machine Name).
             const params = new URLSearchParams(location.search)
+            const openKey = params.get('open')
             const themes = { light, chalk, vintage }
             const themeName = themes[params.get('theme')] ? params.get('theme') : 'light'
             if (themeName === 'chalk') document.body.style.backgroundColor = '#1f2833'
@@ -170,7 +193,8 @@
 
             const data = {
                 ...defaultData,
-                formButton: params.has('dialog'),
+                formButton: params.has('dialog') || openKey !== null,
+                openParameter: openKey ?? undefined,
                 formButtonStyle: {
                     fab: !params.has('label'),
                     label: params.get('label') ?? undefined,
@@ -223,14 +247,74 @@
                 })
             }
 
-            const keyPathsToRandomize = ['columns.1.values.0.value', 'columns.2.values.0.value']
-            const inter = setInterval(() => {
-                const randomizedObj = randomizeObjectValues(data, keyPathsToRandomize)
+            if (openKey !== null) {
+                // The record the URL names, pre-filled into Machine Name, sent
+                // as a new inputData a while after each route change: Studio
+                // re-queries the bindings and sends one after every change.
+                const sendRecord = () => {
+                    const record = new URLSearchParams(location.search).get(openKey)
+                    setTimeout(() => {
+                        widget.inputData = {
+                            ...data,
+                            formFields: data.formFields.map((field) =>
+                                // Within the field's validation pattern (no hyphen).
+                                field.label === 'Machine Name' && record !== null
+                                    ? {
+                                          ...field,
+                                          preFilledValue: `Record ${record.replace(/[^a-zA-Z0-9 ]/g, ' ')}`
+                                      }
+                                    : field
+                            )
+                        }
+                    }, 800)
+                }
+                const setRoute = () => {
+                    widget.route = '/demo' + location.search
+                    sendRecord()
+                }
+                // A stand-in for Studio's URL handling: merge the parameters
+                // (undefined, null and '' delete a key), push the URL and pass
+                // the new route.
+                const setParams = (changes) => {
+                    const url = new URL(location.href)
+                    for (const [key, value] of Object.entries(changes)) {
+                        if (value === undefined || value === null || value === '')
+                            url.searchParams.delete(key)
+                        else url.searchParams.set(key, value)
+                    }
+                    if (url.href === location.href) return
+                    history.pushState(null, '', url)
+                    setRoute()
+                }
+                widget.route = '/demo' + location.search
+                widget.addEventListener('param-submit', (event) => {
+                    console.log('param-submit', event.detail.params)
+                    setParams(event.detail.params ?? {})
+                })
+                widget.addEventListener('nav-submit', (event) => {
+                    console.log('nav-submit', event.detail.path)
+                    setParams(Object.fromEntries(new URLSearchParams(event.detail.path.split('?')[1] ?? '')))
+                })
+                window.addEventListener('popstate', setRoute)
+                const toolbar = document.createElement('div')
+                toolbar.className = 'toolbar'
+                for (const record of ['press-1', 'press-2']) {
+                    const button = document.createElement('button')
+                    button.textContent = `Edit ${record}`
+                    button.addEventListener('click', () => setParams({ [openKey]: record }))
+                    toolbar.append(button)
+                }
+                document.body.prepend(toolbar)
+            } else {
+                const keyPathsToRandomize = ['columns.1.values.0.value', 'columns.2.values.0.value']
+                const inter = setInterval(() => {
+                    const randomizedObj = randomizeObjectValues(data, keyPathsToRandomize)
 
-                // console.log('random', randomizedObj.dataseries[0].data[0])
-                widget.inputData = randomizedObj
-                // clearInterval(inter)
-            }, 1000)
+                    // console.log('random', randomizedObj.dataseries[0].data[0])
+                    widget.inputData = randomizedObj
+                    // clearInterval(inter)
+                }, 1000)
+            }
         </script>
     </body>
 </html>

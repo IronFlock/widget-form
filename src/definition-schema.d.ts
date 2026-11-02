@@ -38,6 +38,10 @@ export type CornerRadius = number;
  */
 export type IconName = string;
 /**
+ * The name of a URL parameter (such as 'edit') that opens the form instead of the button. On a board, while the page URL carries it (?edit=press-1) the dialog is open and the tile shows no button; closing the dialog removes the parameter again. Bind each field's pre-filled value to the record's latest row filtered by this parameter (a Parameter filter with this name, plus Latest), and let a table's edit column or a button set the parameter, so one form edits whichever record was chosen. Leave empty to keep the button. Outside a board (the editor's preview) the button stays, so the form can be tried. Only applies when the Form Open Button is enabled.
+ */
+export type OpenOnURLParameter = string;
+/**
  * Minimum dialog width as a number with an optional unit, such as '800px', '60%' or '50vw' (no unit means px; % and vw are a share of the window width). Leave empty for the default. The dialog is normally 480px wide (less on small screens), so only a larger value makes it wider. Fields widen with the dialog, so fields that take part of a row (Width, Field Layout) fit more of them on a row; number, date and color fields on a full row keep their 200px.
  */
 export type MinimumWidth = string;
@@ -241,6 +245,7 @@ export interface FormConfiguration {
     subTitle?: Subtitle;
     formButton?: FormOpenButton;
     formButtonStyle?: FormOpenButtonStyle;
+    openParameter?: OpenOnURLParameter;
     formDialogSize?: FormDialogSize;
     accentColor?: HighlightColor;
     deleteButton?: ShowDeleteButton;
