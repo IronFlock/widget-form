@@ -24,10 +24,11 @@ npm i @ironflock/widget-form
 
 ## Properties
 
-| Property    | Type        | Description                   |
-| ----------- | ----------- | ----------------------------- |
-| `inputData` | `FormConfiguration` | Form configuration and fields |
-| `theme`     | `Theme`     | Theme object for styling      |
+| Property    | Type                | Description                                                                 |
+| ----------- | ------------------- | --------------------------------------------------------------------------- |
+| `inputData` | `FormConfiguration` | Form configuration and fields                                               |
+| `theme`     | `Theme`             | Theme object for styling                                                    |
+| `route`     | `string`            | The board page's path with its `?query`, set by IronFlock Studio on boards |
 
 ## Events
 
@@ -35,6 +36,8 @@ npm i @ironflock/widget-form
 | ------------------ | ---------------------------------------- | ---------------------------------------------------------------- |
 | `data-submit`      | Array of field/value mappings            | Fired when the form is submitted                                 |
 | `file-data-submit` | `{ items, waitUntil }` (see File Fields) | Fired instead of `data-submit` when the save includes a new file |
+| `nav-submit`       | `{ path }`                               | After Delete, with the resolved `deleteNavigationRoute`          |
+| `param-submit`     | `{ params: { [openParameter]: undefined } }` | When a dialog opened by a URL parameter closes (see Open on URL Parameter) |
 
 ## Configuration
 
@@ -46,6 +49,7 @@ interface FormConfiguration {
     subTitle?: string
     formButton?: boolean // Show button to open form dialog
     formButtonStyle?: FormButtonStyle // How that button looks
+    openParameter?: string // The URL parameter that opens that dialog instead of the button
     formDialogSize?: FormDialogSize // Minimum size of that dialog
     fieldLayout?: FieldLayout // How the fields share rows (see Layout)
     formFields?: FormField[]
@@ -86,6 +90,36 @@ interface FormDialogSize {
 ```
 
 Each value is a number with an optional unit: `px` (assumed when there is none), `%` or `vw`/`vh` for a share of the window, `rem` or `em`. Empty keeps the default. A value replaces Material's own 280×140px minimum and is capped at the window less 24px on each side, so the dialog and its Submit button always stay on screen; a form taller than that scrolls inside the dialog. On an ordinary window a value below the default size therefore changes nothing, while on a window narrower than 328px (or a very short one) any value, even a large one, lets the dialog shrink a little below Material's minimum to keep those margins. Anything else, such as `auto`, `calc()` or a negative number, is ignored with a console warning. Fields that take part of a row (see Layout) fit more of them on a row in a wider dialog.
+
+### Open on URL Parameter
+
+With `formButton: true` and `openParameter` set to a parameter name, such as `edit`, the form is an edit dialog that another widget opens: on a board the tile shows no button, and the dialog is open while the page URL carries the parameter (`?edit=press-1`). A `widget-table` column of type `edit` sets it to the clicked row's key; so can a link. Closing the dialog (Cancel, Submit, Delete) removes the parameter again, so the same row can open it again, and the browser's Back button closes it as well.
+
+The record comes through the fields' pre-filled values, bound in Studio to the record's latest row filtered by the same parameter: a Parameter filter named `edit` plus the Latest switch, on each bound field, and the record's key column as a hidden field with the same binding, so a save writes the same entity. While Studio re-queries those bindings after the parameter changed, the dialog shows a progress bar and its Save, Delete and Reset buttons are disabled; the fields then rebuild from the record.
+
+```yaml
+# board-template.yml (Studio stores the same)
+openParameter: $str:edit
+formFields:
+    - label: $str:Machine # the entity key, written back unchanged
+      hiddenField: $bool:true
+      targetColumn: { tablename: machines, column: machine_id, dataType: string }
+      preFilledValue:
+          valueRef:
+              tablename: machines
+              column: machine_id
+              queryParams:
+                  limit: 1
+                  filterAnd:
+                      - { latest: true, column: '', operator: '=', value: '', dataType: boolean }
+                      - { column: machine_id, operator: '=', value: edit, dataType: string, useFilter: true }
+    - label: $str:Name # every edited field: the same filter, its own column
+      type: $str:textfield
+      targetColumn: { tablename: machines, column: name, dataType: string }
+      preFilledValue: { valueRef: { tablename: machines, column: name, queryParams: { limit: 1, filterAnd: [...] } } }
+```
+
+Keep a "New" form as a tile of its own: with the parameter absent, Studio drops the filter and the bindings would deliver the newest record. A Delete with `deleteNavigationRoute` drops the parameter in the same navigation. Outside a board (the Widget Editor's preview, where there is no route) the button stays, so the form can be tried; a bookmarked URL with the parameter opens the dialog on load.
 
 ### Dialog Colours
 

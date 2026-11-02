@@ -9,7 +9,8 @@
             "Records should also be deletable or flagged as deleted from the dashboard (deleteButton, deleteFlagColumn).",
             "A record comes with a document, image or data file, such as a new SOP revision as a PDF: a field of type 'file' stores the file with the row (fileNamespace, acceptedFileTypes).",
             "A password or API token is entered: a 'secret' field masks it and never shows the saved value. Target a 'secret: true' column, which FleetDB encrypts.",
-            "A long form should read as a compact sheet, not one tall column: fields side by side (width, fieldLayout.defaultWidth), row breaks (newRow), headed groups shown or hidden together (type section), and compact fields for a desktop board (fieldLayout.density)."
+            "A long form should read as a compact sheet, not one tall column: fields side by side (width, fieldLayout.defaultWidth), row breaks (newRow), headed groups shown or hidden together (type section), and compact fields for a desktop board (fieldLayout.density).",
+            "A table's 'edit' column (or a link) sets ?edit=<id> and one form edits that record: set openParameter to 'edit' and bind preFilledValue to the latest row filtered by it (useFilter); the dialog opens pre-filled and closes back to the table."
         ],
         "notFor": [
             "Narrowing what other widgets display — that is filtering, not data entry. Use widget-filter-dropdown or widget-filter-calendar.",
@@ -101,6 +102,17 @@
                     "type": "string",
                     "order": 6
                 }
+            }
+        },
+        "openParameter": {
+            "title": "Open on URL parameter",
+            "description": "The name of a URL parameter (such as 'edit') that opens the form instead of the button. On a board, while the page URL carries it (?edit=press-1) the dialog is open and the tile shows no button; closing the dialog removes the parameter again. Bind each field's pre-filled value to the record's latest row filtered by this parameter (a Parameter filter with this name, plus Latest), and let a table's edit column or a button set the parameter, so one form edits whichever record was chosen. Leave empty to keep the button. Outside a board (the editor's preview) the button stays, so the form can be tried. Only applies when the Form Open Button is enabled.",
+            "dataDrivenDisabled": true,
+            "type": "string",
+            "order": 4.5,
+            "condition": {
+                "relativePath": "../formButton",
+                "showIfValueIn": [true]
             }
         },
         "formDialogSize": {
