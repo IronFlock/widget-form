@@ -196,6 +196,8 @@ type FieldWidth = 'full' | 'three-quarters' | 'two-thirds' | 'half' | 'third' | 
 
 `density: 'compact'` makes the form smaller for desktop boards used with a mouse, and is what a form dropped on a board starts with (the default config sets it). Unset, a form is comfortable, Material's size, which is how forms made before stay. Fields are 40px high instead of Material's 56px, with 14px text, the buttons are 32px high, and the gaps between fields and rows shrink. The Form Open Button keeps its own `size`.
 
+In a tile (without `formButton`), the Delete, Reset and Submit buttons stay at the bottom while the fields scroll above them, with a thin line between the two while more fields are hidden below. A short form keeps its buttons right under its last field. In a tile with less than about 160px left under its title, the fields and the buttons scroll together.
+
 #### Sections
 
 An entry of type `section` is a heading, not an input. It shows its `label`, with its `description` under it, across a full row, and a line above it unless it comes first. It groups the fields after it, up to the next section, and stores nothing. Its `groupWidth` sets the width of the fields in its group that have no `width` of their own.

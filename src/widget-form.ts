@@ -2,6 +2,7 @@ import { html, css, LitElement, PropertyValues, nothing } from 'lit'
 import { repeat } from 'lit/directives/repeat.js'
 import { keyed } from 'lit/directives/keyed.js'
 import { ifDefined } from 'lit/directives/if-defined.js'
+import { ref } from 'lit/directives/ref.js'
 import { property, state, customElement, query } from 'lit/decorators.js'
 import { FormConfiguration } from './definition-schema.js'
 
@@ -763,6 +764,36 @@ export class WidgetForm extends LitElement {
 
     // Why the last save failed, shown above the actions.
     @state() private submitError = ''
+
+    // Inline mode: fields hide below the scroll edge, so a line sets the
+    // action bar off from them (md-dialog draws the same divider above its
+    // actions). Kept current by observeScrollEnd().
+    @state() private moreBelow = false
+
+    private scrollEndObserver?: IntersectionObserver
+
+    /**
+     * The ref callback of `.scroll-end`, the empty marker after the inline
+     * form's fields: watches it against the scrollport of `.wrapper`, its
+     * parent, and fields hide below that edge while it is out of view. Lit
+     * calls it with undefined when the marker goes (the form switched to
+     * dialog mode) and when this element is detached, and with the marker
+     * again on reattach, so the observer follows the element's lifecycle. A
+     * new observer reports at once, which corrects a value left from before.
+     */
+    private observeScrollEnd = (marker?: Element) => {
+        this.scrollEndObserver?.disconnect()
+        this.scrollEndObserver = undefined
+        const root = marker?.parentElement
+        if (!marker || !root) return
+        this.scrollEndObserver = new IntersectionObserver(
+            (entries) => {
+                this.moreBelow = !entries[entries.length - 1].isIntersecting
+            },
+            { root }
+        )
+        this.scrollEndObserver.observe(marker)
+    }
 
     version: string = 'versionplaceholder'
 
@@ -1790,35 +1821,94 @@ export class WidgetForm extends LitElement {
             display: none !important;
         }
 
+        /* Inline mode (formButton off): the fields scroll in .wrapper while
+           the action bar under them, .form-footer, stays in view, as in
+           md-dialog. A bar inside the scroller with position: sticky would
+           cover the field that has focus. .wrapper shrinks but never grows,
+           so a short form keeps its buttons right under its last field. */
+        .inline-form {
+            flex: 1 1 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            container: inline-form / size;
+        }
+
         .wrapper {
             display: flex;
             flex-direction: column;
-            padding: 16px;
+            flex: 0 1 auto;
+            min-height: 0;
+            padding: 16px 16px 8px;
             box-sizing: border-box;
             overflow: auto;
-            /* Derive scrollbar colors from the (inherited) text color so they
-               follow custom styles and themes — e.g. light thumb on dark bg. */
+        }
+
+        /* Derive scrollbar colors from the (inherited) text color so they
+           follow custom styles and themes — e.g. light thumb on dark bg. */
+        .wrapper,
+        .inline-form {
             scrollbar-width: thin;
             scrollbar-color: color-mix(in srgb, currentColor 35%, transparent) transparent;
         }
 
         /* WebKit/Blink fallback for browsers without scrollbar-color support. */
-        .wrapper::-webkit-scrollbar {
+        .wrapper::-webkit-scrollbar,
+        .inline-form::-webkit-scrollbar {
             width: 8px;
             height: 8px;
         }
 
-        .wrapper::-webkit-scrollbar-track {
+        .wrapper::-webkit-scrollbar-track,
+        .inline-form::-webkit-scrollbar-track {
             background: transparent;
         }
 
-        .wrapper::-webkit-scrollbar-thumb {
+        .wrapper::-webkit-scrollbar-thumb,
+        .inline-form::-webkit-scrollbar-thumb {
             background-color: color-mix(in srgb, currentColor 35%, transparent);
             border-radius: 4px;
         }
 
-        .wrapper::-webkit-scrollbar-thumb:hover {
+        .wrapper::-webkit-scrollbar-thumb:hover,
+        .inline-form::-webkit-scrollbar-thumb:hover {
             background-color: color-mix(in srgb, currentColor 55%, transparent);
+        }
+
+        .scroll-end {
+            flex: none;
+            height: 0;
+        }
+
+        /* 8px here and 8px of .wrapper's padding: the 16px the actions
+           always had under the last field. */
+        .form-footer {
+            flex: none;
+            padding: 8px 16px 16px;
+        }
+
+        /* Fields hide below the scroll edge (moreBelow). An inset shadow
+           draws the line without taking layout space. */
+        .form-footer[divided] {
+            box-shadow: inset 0 1px color-mix(in srgb, currentColor 25%, transparent);
+        }
+
+        .form-footer > .form-error {
+            margin: 0 0 16px;
+        }
+
+        /* A tile too short to pin the bar and still show a field above it
+           (a new tile is about 150px tall, and narrow tiles wrap the
+           buttons onto a second row): the fields stop shrinking, and the
+           fields and the bar scroll together under the header, as they did
+           before the bar was pinned. .wrapper no longer clips, so the
+           divider stays off. */
+        @container inline-form (height < 160px) {
+            .wrapper {
+                flex-shrink: 0;
+                overflow: visible;
+            }
         }
 
         /* Wrap rather than overflow: with justify-content: flex-end an
@@ -1830,7 +1920,6 @@ export class WidgetForm extends LitElement {
             flex-wrap: wrap;
             justify-content: flex-end;
             gap: 8px;
-            margin-top: 16px;
         }
 
         h3 {
@@ -2248,8 +2337,13 @@ export class WidgetForm extends LitElement {
             height: 20px;
         }
 
-        :host([compact]) .form-actions {
-            margin-top: 12px;
+        /* 12px between the last field and the actions or the error. */
+        :host([compact]) .wrapper {
+            padding-bottom: 4px;
+        }
+
+        :host([compact]) .form-footer > .form-error {
+            margin-bottom: 12px;
         }
     `
 
@@ -2387,30 +2481,36 @@ export class WidgetForm extends LitElement {
             </div>
             ${!this.inputData?.formButton
                 ? html`
-                      <div class="wrapper">
-                          ${this.renderForm()} ${this.renderSubmitError()}
-                          <div class="form-actions">
-                              ${this.inputData?.deleteButton
-                                  ? html`<md-filled-button
-                                        class="delete-btn"
-                                        form="form"
-                                        value="delete"
-                                        type="submit"
-                                        ?disabled=${this.submitting}
-                                        >Delete</md-filled-button
-                                    >`
-                                  : nothing}
-                              <md-outlined-button ?disabled=${this.submitting} @click=${this.resetForm}
-                                  >Reset</md-outlined-button
-                              >
-                              <md-filled-button
-                                  form="form"
-                                  value="submit"
-                                  type="submit"
-                                  ?disabled=${this.submitting}
-                                  autofocus
-                                  >${this.submitting ? 'Saving…' : 'Submit'}</md-filled-button
-                              >
+                      <div class="inline-form">
+                          <div class="wrapper">
+                              ${this.renderForm()}
+                              <div class="scroll-end" ${ref(this.observeScrollEnd)}></div>
+                          </div>
+                          <div class="form-footer" ?divided=${this.moreBelow}>
+                              ${this.renderSubmitError()}
+                              <div class="form-actions">
+                                  ${this.inputData?.deleteButton
+                                      ? html`<md-filled-button
+                                            class="delete-btn"
+                                            form="form"
+                                            value="delete"
+                                            type="submit"
+                                            ?disabled=${this.submitting}
+                                            >Delete</md-filled-button
+                                        >`
+                                      : nothing}
+                                  <md-outlined-button ?disabled=${this.submitting} @click=${this.resetForm}
+                                      >Reset</md-outlined-button
+                                  >
+                                  <md-filled-button
+                                      form="form"
+                                      value="submit"
+                                      type="submit"
+                                      ?disabled=${this.submitting}
+                                      autofocus
+                                      >${this.submitting ? 'Saving…' : 'Submit'}</md-filled-button
+                                  >
+                              </div>
                           </div>
                       </div>
                   `
