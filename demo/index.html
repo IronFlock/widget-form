@@ -87,7 +87,11 @@
             // ?query, so ...&open=edit&edit=press-1 is the bookmark case; two
             // "Edit" buttons set the parameter like a table's edit column, and
             // a new inputData follows every route change 800 ms later, as the
-            // re-queried bindings would, naming the record in Machine Name).
+            // re-queried bindings would, naming the record in Machine Name),
+            // ?auto (Save on Change: no Reset or Submit, every change saves),
+            // ?auto=settings (Save on Change on a two-setting form whose
+            // pre-filled values the stand-in host updates after each save, as
+            // bindings to the stored row would).
             const params = new URLSearchParams(location.search)
             const openKey = params.get('open')
             const themes = { light, chalk, vintage }
@@ -174,6 +178,36 @@
                 { label: 'Pressure', type: 'numberfield', description: 'bar' },
                 { label: 'Oil-free', type: 'checkbox', newRow: true }
             ]
+            const settingsFields = [
+                {
+                    label: 'Maintenance mode',
+                    type: 'checkbox',
+                    description: 'Stops the line from taking new orders',
+                    targetColumn: {
+                        swarm_app_databackend_key: 1,
+                        tablename: 'line_settings',
+                        column: 'maintenance',
+                        dataType: 'boolean'
+                    },
+                    preFilledValueBoolean: false
+                },
+                {
+                    label: 'Speed',
+                    type: 'dropdown',
+                    targetColumn: {
+                        swarm_app_databackend_key: 1,
+                        tablename: 'line_settings',
+                        column: 'speed',
+                        dataType: 'string'
+                    },
+                    values: [
+                        { displayLabel: 'Slow', value: 'slow' },
+                        { displayLabel: 'Normal', value: 'normal' },
+                        { displayLabel: 'Fast', value: 'fast' }
+                    ],
+                    preFilledValue: 'normal'
+                }
+            ]
             const formFields =
                 layout === 'none'
                     ? demoFields
@@ -194,6 +228,7 @@
             const data = {
                 ...defaultData,
                 formButton: params.has('dialog') || openKey !== null,
+                autoSubmit: params.has('auto'),
                 openParameter: openKey ?? undefined,
                 formButtonStyle: {
                     fab: !params.has('label'),
@@ -208,7 +243,7 @@
                     minFieldWidth: params.has('minw') ? Number(params.get('minw')) : undefined,
                     density: params.get('density') ?? (layout === 'none' ? undefined : defaultData.fieldLayout?.density)
                 },
-                formFields
+                formFields: params.get('auto') === 'settings' ? settingsFields : formFields
             }
 
             const tag = unsafeStatic(`widget-form-${packageJson.version}`)
@@ -229,6 +264,23 @@
             // save with files "uploads" them for a second and a half, with the
             // URL it would write into a file field's URL column.
             widget.addEventListener('data-submit', (event) => console.log('data-submit', event.detail))
+
+            // ?auto=settings: the stored row comes back through the pre-filled
+            // values half a second after a save, as a realtime row does.
+            if (params.get('auto') === 'settings') {
+                widget.addEventListener('data-submit', (event) => {
+                    setTimeout(() => {
+                        for (const item of event.detail) {
+                            const field = data.formFields.find(
+                                (f) => f.targetColumn?.column === item.column_name
+                            )
+                            if (field?.type === 'checkbox') field.preFilledValueBoolean = item.value
+                            else if (field) field.preFilledValue = item.value
+                        }
+                        widget.inputData = structuredClone(data)
+                    }, 500)
+                })
+            }
             if (!params.has('oldhost')) {
                 widget.addEventListener('file-data-submit', (event) => {
                     const { items, waitUntil } = event.detail

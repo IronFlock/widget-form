@@ -18,6 +18,10 @@ export type Subtitle = string;
  */
 export type FormOpenButton = boolean;
 /**
+ * Saves the form every time a field is changed, and hides Reset and Submit: for settings that apply at once. Text and numbers save when the field loses focus or on Enter. An invalid field blocks the save and shows its error, as Submit would. After a save the fields keep what was entered, so bind their pre-filled values to the stored row. Only for a form shown in the tile (Form Open Button off).
+ */
+export type SaveOnChange = boolean;
+/**
  * When enabled (the default, also when unset), the form opens from a round floating action button that shows only the icon. When disabled, it opens from a regular button that shows the icon followed by the Label Text, which says what the form is for at a glance.
  */
 export type FloatingActionButton = boolean;
@@ -238,12 +242,13 @@ export type FormFields = {
 }[];
 
 /**
- * A form widget for collecting user input and storing it in database tables. Use this widget to create data entry interfaces for manual input, configuration settings, user feedback, or any scenario requiring structured data collection. Field types: text, number, dropdown, checkbox, textarea, datetime, color, masked secret and file upload. Each field maps to a database column, enabling direct data persistence. Can display as a button-triggered modal or inline form.
+ * A form that stores what people enter as a row in a table, shown in the tile or in a dialog opened by a button. Fields: text, number, dropdown, checkbox, textarea, date and time, colour, masked secret and file upload, each written to one column.
  */
 export interface FormConfiguration {
     title?: Title;
     subTitle?: Subtitle;
     formButton?: FormOpenButton;
+    autoSubmit?: SaveOnChange;
     formButtonStyle?: FormOpenButtonStyle;
     openParameter?: OpenOnURLParameter;
     formDialogSize?: FormDialogSize;

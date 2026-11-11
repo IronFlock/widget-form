@@ -48,6 +48,7 @@ interface FormConfiguration {
     title?: string
     subTitle?: string
     formButton?: boolean // Show button to open form dialog
+    autoSubmit?: boolean // Save on Change: no Reset or Submit, inline forms only
     formButtonStyle?: FormButtonStyle // How that button looks
     openParameter?: string // The URL parameter that opens that dialog instead of the button
     formDialogSize?: FormDialogSize // Minimum size of that dialog
@@ -77,6 +78,10 @@ By default (`fab` unset or `true`) it is a round Material floating action button
 `cornerRadius` rounds the corners of either button, in px: `0` is square, and half the button's height or more is fully round (a circle for the floating action button, a pill for the regular button). Unset, the floating action button keeps Material's 12, 16 or 28px corners by `size`, and the regular button is a pill.
 
 Every field except `fab` can be bound to a column, so the button can follow data: a fault state can turn it red, swap its icon to `warning` and relabel it "Report fault". A bound value that does not fit falls back to the default: a size other than small, medium or large gives medium, an invalid colour the theme's, a corner radius that is not a number of 0 or more (numeric text counts) Material's corners, and an empty icon name `add`. A numeric label is shown as it is.
+
+### Save on Change
+
+With `autoSubmit: true` (and no `formButton`) the form has no Reset or Submit button: every change saves the whole form, as Submit would. A checkbox, dropdown or picked colour saves at once; text, numbers and dates save when the field loses focus or on Enter. An invalid field blocks the save and shows its error, as Submit does. After a save the fields keep what was entered rather than going back to their pre-filled values, so bind those to the stored row and they follow it. A Delete button stays, and "Saving…" shows while a file is stored. For a single on/off setting, `widget-switch` with a `targetColumn` is the better fit: it shows the stored position and writes a row per click.
 
 ### Dialog Size
 
