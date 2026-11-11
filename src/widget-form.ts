@@ -732,6 +732,11 @@ export class WidgetForm extends LitElement {
     // sync runs once the save has settled.
     private resyncAfterSubmit = false
 
+    // Save on Change: a save is scheduled for the end of this update, or one
+    // waits for a file save in flight to settle.
+    private autoSaveScheduled = false
+    private autoSaveAfterSubmit = false
+
     @query('md-dialog') dialog!: MdDialog
 
     @state() private formKey = 0
@@ -1131,7 +1136,49 @@ export class WidgetForm extends LitElement {
             }
         }
 
+        if (action !== 'delete' && this.autoSubmits()) {
+            this.afterAutoSave()
+            return
+        }
         this.closeDialog()
+    }
+
+    // Save on Change applies to a form shown in the tile only. Studio does not
+    // evaluate the setting's condition, so a dialog form with a stale
+    // autoSubmit keeps its buttons.
+    autoSubmits(): boolean {
+        return this.inputData?.autoSubmit === true && !this.inputData?.formButton
+    }
+
+    // Save on Change: a committed change (change, never input, so not every
+    // keystroke) saves the whole form, as Submit does, and requestSubmit()
+    // validates as Submit does: an invalid field blocks the save, shows its
+    // error and takes the focus. It waits for the render the change caused,
+    // so a field a condition just showed or hid is saved as it is drawn, and
+    // changes in one task save once. A change during a file save is saved
+    // once that has settled.
+    async autoSave() {
+        if (this.autoSaveScheduled) return
+        this.autoSaveScheduled = true
+        await this.updateComplete
+        this.autoSaveScheduled = false
+        if (!this.autoSubmits()) return
+        if (this.submitting) {
+            this.autoSaveAfterSubmit = true
+            return
+        }
+        this.renderRoot.querySelector<HTMLFormElement>('form.form-content')?.requestSubmit()
+    }
+
+    // After a save on change the fields keep what was entered: the stored
+    // values come back through the pre-filled bindings, and a reset would
+    // show the old ones until they do (a checkbox would flick back). Only a
+    // saved file is let go, or the next change would upload it again.
+    private afterAutoSave() {
+        this.chosenFiles = {}
+        this.renderRoot
+            .querySelectorAll<HTMLInputElement>('.file-input')
+            .forEach((input) => (input.value = ''))
     }
 
     // The columns a file field writes beside the key, with what each gets.
@@ -1214,7 +1261,8 @@ export class WidgetForm extends LitElement {
         this.submitError = ''
         try {
             await outcome
-            this.closeDialog()
+            if (this.autoSubmits()) this.afterAutoSave()
+            else this.closeDialog()
         } catch (err) {
             const message = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
             this.submitError = message || 'The file could not be saved. Nothing was written.'
@@ -1223,6 +1271,10 @@ export class WidgetForm extends LitElement {
             if (this.resyncAfterSubmit) {
                 this.resyncAfterSubmit = false
                 this.syncOpenParameter()
+            }
+            if (this.autoSaveAfterSubmit) {
+                this.autoSaveAfterSubmit = false
+                this.autoSave()
             }
         }
     }
@@ -1346,6 +1398,7 @@ export class WidgetForm extends LitElement {
     handleFieldChange(event: Event) {
         const form = event.currentTarget as HTMLFormElement
         if (form) this.refreshFieldValues(form)
+        if (event.type === 'change' && this.autoSubmits()) this.autoSave()
     }
 
     // Sections hold no value: one with a field's label must not shadow it.
@@ -1898,6 +1951,18 @@ export class WidgetForm extends LitElement {
             margin: 0 0 16px;
         }
 
+        /* Save on Change: "Saving…" while a file is stored. The bar can then
+           end with the status or the error, which need no gap below. */
+        .form-status {
+            margin: 0 0 16px;
+            font-size: 14px;
+            opacity: 0.75;
+        }
+
+        .form-footer > :last-child:is(.form-error, .form-status) {
+            margin-bottom: 0;
+        }
+
         /* A tile too short to pin the bar and still show a field above it
            (a new tile is about 150px tall, and narrow tiles wrap the
            buttons onto a second row): the fields stop shrinking, and the
@@ -2342,8 +2407,13 @@ export class WidgetForm extends LitElement {
             padding-bottom: 4px;
         }
 
-        :host([compact]) .form-footer > .form-error {
+        :host([compact]) .form-footer > .form-error,
+        :host([compact]) .form-status {
             margin-bottom: 12px;
+        }
+
+        :host([compact]) .form-footer > :last-child:is(.form-error, .form-status) {
+            margin-bottom: 0;
         }
     `
 
@@ -2486,32 +2556,7 @@ export class WidgetForm extends LitElement {
                               ${this.renderForm()}
                               <div class="scroll-end" ${ref(this.observeScrollEnd)}></div>
                           </div>
-                          <div class="form-footer" ?divided=${this.moreBelow}>
-                              ${this.renderSubmitError()}
-                              <div class="form-actions">
-                                  ${this.inputData?.deleteButton
-                                      ? html`<md-filled-button
-                                            class="delete-btn"
-                                            form="form"
-                                            value="delete"
-                                            type="submit"
-                                            ?disabled=${this.submitting}
-                                            >Delete</md-filled-button
-                                        >`
-                                      : nothing}
-                                  <md-outlined-button ?disabled=${this.submitting} @click=${this.resetForm}
-                                      >Reset</md-outlined-button
-                                  >
-                                  <md-filled-button
-                                      form="form"
-                                      value="submit"
-                                      type="submit"
-                                      ?disabled=${this.submitting}
-                                      autofocus
-                                      >${this.submitting ? 'Saving…' : 'Submit'}</md-filled-button
-                                  >
-                              </div>
-                          </div>
+                          ${this.renderInlineFooter()}
                       </div>
                   `
                 : html`
@@ -2608,6 +2653,53 @@ export class WidgetForm extends LitElement {
             @click=${this.openFormDialog}
             ><md-icon slot="icon">${style.iconName}</md-icon>${label}</md-filled-button
         >`
+    }
+
+    /**
+     * The inline form's action bar. With Save on Change there is no Reset or
+     * Submit: it holds only Delete, when configured, and the error of the
+     * last save, or "Saving…" while a file is stored, and it is left out
+     * when it has none of them.
+     */
+    renderInlineFooter() {
+        const auto = this.autoSubmits()
+        const deleteButton = this.inputData?.deleteButton
+            ? html`<md-filled-button
+                  class="delete-btn"
+                  form="form"
+                  value="delete"
+                  type="submit"
+                  ?disabled=${this.submitting}
+                  >Delete</md-filled-button
+              >`
+            : nothing
+        if (auto && deleteButton === nothing && !this.submitError && !this.submitting) return nothing
+        return html`
+            <div class="form-footer" ?divided=${this.moreBelow}>
+                ${this.renderSubmitError()}
+                ${auto
+                    ? html`${this.submitting
+                          ? html`<div class="form-status" role="status">Saving…</div>`
+                          : nothing}
+                      ${deleteButton === nothing
+                          ? nothing
+                          : html`<div class="form-actions">${deleteButton}</div>`}`
+                    : html`<div class="form-actions">
+                          ${deleteButton}
+                          <md-outlined-button ?disabled=${this.submitting} @click=${this.resetForm}
+                              >Reset</md-outlined-button
+                          >
+                          <md-filled-button
+                              form="form"
+                              value="submit"
+                              type="submit"
+                              ?disabled=${this.submitting}
+                              autofocus
+                              >${this.submitting ? 'Saving…' : 'Submit'}</md-filled-button
+                          >
+                      </div>`}
+            </div>
+        `
     }
 
     renderForm() {
