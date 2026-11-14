@@ -698,6 +698,21 @@ const openButtonStyle = (style: FormConfiguration['formButtonStyle']) => {
     }
 }
 
+// The Button Labels with defaults applied: each label is bindable, so a
+// number is shown as it is; blank, unset or anything else keeps the button's
+// own word.
+const buttonLabel = (value: unknown, fallback: string): string => {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+    return fallback
+}
+
+const buttonLabels = (config: FormConfiguration['buttonLabels']) => ({
+    submit: buttonLabel(config?.submitLabel, 'Submit'),
+    reset: buttonLabel(config?.resetLabel, 'Reset'),
+    cancel: buttonLabel(config?.cancelLabel, 'Cancel')
+})
+
 let maskSheet: CSSStyleSheet | null | undefined
 
 // The sheet that masks a secret field kept away from the browser's password
@@ -972,9 +987,9 @@ export class WidgetForm extends LitElement {
         )
     }
 
-    // Close the dialog after a save, a delete or Cancel: back to the pre-filled
-    // values, and the parameter that opened it released, unless a navigation
-    // takes it along already (Delete with a route).
+    // Close the dialog after a save or Cancel: back to the pre-filled values,
+    // and the parameter that opened it released, unless a navigation takes it
+    // along already (a save with Post-Submit Navigation).
     private closeDialog({ navigated = false } = {}) {
         this.resetForm()
         this.releaseOpenParameter(!navigated)
@@ -983,8 +998,8 @@ export class WidgetForm extends LitElement {
     }
 
     // md-dialog's closed event, after any close: the fallback that releases
-    // the parameter when the dialog closed on its own; a no-op after Cancel, a
-    // save or a delete, which released it already.
+    // the parameter when the dialog closed on its own; a no-op after Cancel or
+    // a save, which released it already.
     private handleDialogClosed() {
         this.dialogOpen = false
         this.dialogContentMounted = false
@@ -1095,9 +1110,6 @@ export class WidgetForm extends LitElement {
     handleFormSubmit(event: Event) {
         event.preventDefault()
         if (this.submitting) return
-        const submitter = (event as SubmitEvent).submitter as HTMLElement
-        const action = submitter?.getAttribute('value') ?? 'submit'
-
         const form = event.target as HTMLFormElement
         const formData = new FormData(form)
         const submitData: (ValueItem | FileItem)[] = []
@@ -1126,7 +1138,7 @@ export class WidgetForm extends LitElement {
             }
 
             if (field.type === 'file') {
-                submitData.push(...this.fileFieldItems(field, i, targetColumn, action))
+                submitData.push(...this.fileFieldItems(field, i, targetColumn))
                 return
             }
 
@@ -1142,14 +1154,6 @@ export class WidgetForm extends LitElement {
             }
             submitData.push({ ...targetColumn, value: this.formatValue(rawValue, field.type ?? 'textfield') })
         })
-
-        if (this.inputData?.deleteFlagColumn)
-            submitData.push({
-                swarm_app_databackend_key: this.inputData?.deleteFlagColumn?.swarm_app_databackend_key,
-                table_name: this.inputData?.deleteFlagColumn?.tablename,
-                column_name: this.inputData?.deleteFlagColumn?.column,
-                value: action === 'delete'
-            })
 
         // A form that saves a new file needs the host to upload it first. The
         // dialog stays open until the host reports back: md-dialog closes on
@@ -1169,34 +1173,36 @@ export class WidgetForm extends LitElement {
             })
         )
 
-        if (action === 'delete') {
-            const deleteRoute = this.resolveRoute({
-                route: this.inputData?.deleteNavigationRoute,
-                variables: this.inputData?.variables
-            })
-            if (deleteRoute) {
-                // The parameter that opened the dialog leaves with the
-                // navigation, in its one history entry: a param-submit of its
-                // own would race the navigation and push the old page without
-                // it. Studio drops a key whose value is empty.
-                const opened = this.openedBy
-                const path =
-                    opened && routeParameter(this.route, opened.key) === opened.value
-                        ? pathDeletingParameter(String(deleteRoute), opened.key)
-                        : String(deleteRoute)
-                this.dispatchEvent(
-                    new CustomEvent('nav-submit', { detail: { path }, bubbles: true, composed: true })
-                )
-                this.closeDialog({ navigated: true })
-                return
-            }
-        }
+        this.afterSave()
+    }
 
-        if (action !== 'delete' && this.autoSubmits()) {
+    // After a save: Save on Change keeps the fields; otherwise the form
+    // resets and closes, and then opens the Post-Submit Navigation when one is
+    // set.
+    private afterSave() {
+        if (this.autoSubmits()) {
             this.afterAutoSave()
             return
         }
-        this.closeDialog()
+        const route = this.resolveRoute({
+            route: this.inputData?.submitNavigationRoute,
+            variables: this.inputData?.variables
+        })
+        if (!route) {
+            this.closeDialog()
+            return
+        }
+        // The parameter that opened the dialog leaves with the navigation, in
+        // its one history entry: a param-submit of its own would race the
+        // navigation and push the old page without it. Studio drops a key
+        // whose value is empty.
+        const opened = this.openedBy
+        const path =
+            opened && routeParameter(this.route, opened.key) === opened.value
+                ? pathDeletingParameter(route, opened.key)
+                : route
+        this.dispatchEvent(new CustomEvent('nav-submit', { detail: { path }, bubbles: true, composed: true }))
+        this.closeDialog({ navigated: true })
     }
 
     // Save on Change applies to a form shown in the tile only. Studio does not
@@ -1255,9 +1261,9 @@ export class WidgetForm extends LitElement {
     // URL column for the host to fill. Without one the record keeps its file:
     // the pre-filled key is written back, and with no pre-filled key the
     // columns are left out, never set to null, so a table with entity keys
-    // carries the previous values over. A delete never uploads.
-    fileFieldItems(field: Column, i: number, target: TargetRef, action: string): (ValueItem | FileItem)[] {
-        const file = action === 'delete' ? undefined : this.chosenFiles[i]
+    // carries the previous values over.
+    fileFieldItems(field: Column, i: number, target: TargetRef): (ValueItem | FileItem)[] {
+        const file = this.chosenFiles[i]
         const namespace = typeof field.fileNamespace === 'string' ? field.fileNamespace.trim() : ''
         if (file && namespace) {
             const contentType = fileContentType(file, acceptedTypes(field.acceptedFileTypes))
@@ -1317,8 +1323,7 @@ export class WidgetForm extends LitElement {
         this.submitError = ''
         try {
             await outcome
-            if (this.autoSubmits()) this.afterAutoSave()
-            else this.closeDialog()
+            this.afterSave()
         } catch (err) {
             const message = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
             this.submitError = message || 'The file could not be saved. Nothing was written.'
@@ -1893,11 +1898,13 @@ export class WidgetForm extends LitElement {
     }
 
     resolveRoute(item?: any): string | undefined {
-        let route: string = item?.route ?? ''
-        if (!route) return undefined
-        if (item?.variables) {
+        // A bound route may arrive as a number.
+        let route: string =
+            typeof item?.route === 'string' || typeof item?.route === 'number' ? String(item.route) : ''
+        if (!route.trim()) return undefined
+        if (Array.isArray(item?.variables)) {
             for (const variable of item.variables) {
-                if (variable.label) {
+                if (variable?.label) {
                     route = route
                         .split(`{{${variable.label}}}`)
                         .join(encodeURIComponent(String(variable.value ?? '')))
@@ -2099,7 +2106,7 @@ export class WidgetForm extends LitElement {
 
         /* md-dialog lays the actions out as a right-aligned flex row with an
            8px gap and clips what overflows its container, so without wrapping
-           a narrow window hides the leftmost buttons, Delete first. */
+           a narrow window hides the leftmost buttons. */
         .form [slot='actions'] {
             flex-wrap: wrap;
         }
@@ -2392,14 +2399,6 @@ export class WidgetForm extends LitElement {
             max-width: calc(100% - 16px);
         }
 
-        .delete-btn {
-            --md-filled-button-container-color: #d32f2f;
-            --md-filled-button-label-text-color: #fff;
-            --md-filled-button-hover-label-text-color: #fff;
-            --md-filled-button-focus-label-text-color: #fff;
-            --md-filled-button-pressed-label-text-color: #fff;
-        }
-
         /* Density compact (updated() sets the attribute): fields 40px high
            instead of Material's 56 (8px above and below the 24px line instead
            of 16) with 14px text, 32px buttons, smaller icon buttons and
@@ -2529,6 +2528,7 @@ export class WidgetForm extends LitElement {
         )
         // The label names the form, since a custom icon need not mean "add".
         const buttonStyle = openButtonStyle(this.inputData?.formButtonStyle)
+        const labels = buttonLabels(this.inputData?.buttonLabels)
         const title = this.inputData?.title
         const fabLabel = typeof title === 'string' && title.trim() ? title.trim() : 'Open form'
         // Open on URL parameter replaces the button on a board. Without a
@@ -2655,31 +2655,15 @@ export class WidgetForm extends LitElement {
                           ${this.dialogContentMounted ? this.renderForm() : nothing}
                           <div slot="actions">
                               ${this.renderSubmitError()}
-                              ${this.inputData?.deleteButton
-                                  ? html`<md-filled-button
-                                        class="delete-btn"
-                                        form="form"
-                                        value="delete"
-                                        type="submit"
-                                        ?disabled=${this.submitting || this.awaitingRecord}
-                                        >Delete</md-filled-button
-                                    >`
-                                  : nothing}
-                              <md-outlined-button
-                                  ?disabled=${this.submitting || this.awaitingRecord}
-                                  @click=${this.resetForm}
-                                  >Reset</md-outlined-button
-                              >
                               <md-outlined-button ?disabled=${this.submitting} @click=${this.cancelEdit}
-                                  >Cancel</md-outlined-button
+                                  >${labels.cancel}</md-outlined-button
                               >
                               <md-filled-button
                                   form="form"
-                                  value="submit"
                                   type="submit"
                                   ?disabled=${this.submitting || this.awaitingRecord}
                                   autofocus
-                                  >${this.submitting ? 'Saving…' : 'Submit'}</md-filled-button
+                                  >${this.submitting ? 'Saving…' : labels.submit}</md-filled-button
                               >
                           </div>
                       </md-dialog>
@@ -2725,48 +2709,33 @@ export class WidgetForm extends LitElement {
     }
 
     /**
-     * The inline form's action bar. With Save on Change there is no Reset or
-     * Submit: it holds only Delete, when configured, and the error of the
-     * last save, or "Saving…" while a file is stored, and it is left out
-     * when it has none of them.
+     * The inline form's action bar: Reset and Submit, with the error of the
+     * last save above them. With Save on Change there is no Reset or Submit:
+     * it holds only the error, or "Saving…" while a file is stored, and it is
+     * left out when it has neither.
      */
     renderInlineFooter() {
-        const auto = this.autoSubmits()
-        const deleteButton = this.inputData?.deleteButton
-            ? html`<md-filled-button
-                  class="delete-btn"
-                  form="form"
-                  value="delete"
-                  type="submit"
-                  ?disabled=${this.submitting}
-                  >Delete</md-filled-button
-              >`
-            : nothing
-        if (auto && deleteButton === nothing && !this.submitError && !this.submitting) return nothing
+        const labels = buttonLabels(this.inputData?.buttonLabels)
+        if (this.autoSubmits())
+            return this.submitError || this.submitting
+                ? html`<div class="form-footer" ?divided=${this.moreBelow}>
+                      ${this.renderSubmitError()}
+                      ${this.submitting
+                          ? html`<div class="form-status" role="status">Saving…</div>`
+                          : nothing}
+                  </div>`
+                : nothing
         return html`
             <div class="form-footer" ?divided=${this.moreBelow}>
                 ${this.renderSubmitError()}
-                ${auto
-                    ? html`${this.submitting
-                          ? html`<div class="form-status" role="status">Saving…</div>`
-                          : nothing}
-                      ${deleteButton === nothing
-                          ? nothing
-                          : html`<div class="form-actions">${deleteButton}</div>`}`
-                    : html`<div class="form-actions">
-                          ${deleteButton}
-                          <md-outlined-button ?disabled=${this.submitting} @click=${this.resetForm}
-                              >Reset</md-outlined-button
-                          >
-                          <md-filled-button
-                              form="form"
-                              value="submit"
-                              type="submit"
-                              ?disabled=${this.submitting}
-                              autofocus
-                              >${this.submitting ? 'Saving…' : 'Submit'}</md-filled-button
-                          >
-                      </div>`}
+                <div class="form-actions">
+                    <md-outlined-button ?disabled=${this.submitting} @click=${this.resetForm}
+                        >${labels.reset}</md-outlined-button
+                    >
+                    <md-filled-button form="form" type="submit" ?disabled=${this.submitting} autofocus
+                        >${this.submitting ? 'Saving…' : labels.submit}</md-filled-button
+                    >
+                </div>
             </div>
         `
     }

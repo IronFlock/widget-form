@@ -54,13 +54,21 @@ export type MinimumWidth = string;
  */
 export type MinimumHeight = string;
 /**
- * When enabled, shows a delete button that allows users to remove existing entries.
+ * Text on the button that saves the form, such as 'Save', 'Add reading' or 'Delete'; 'Submit' when empty. It takes the Highlight Color, so give a delete form a red one. Can be bound to a column; a number is shown as it is.
  */
-export type ShowDeleteButton = boolean;
+export type SubmitLabel = string;
 /**
- * The destination path to route to after delete. Use for navigating to a home or main page.
+ * Text on the Reset button of a form shown in the tile; 'Reset' when empty. A dialog has no Reset. Can be bound to a column.
  */
-export type PostDeleteNavigation = string;
+export type ResetLabel = string;
+/**
+ * Text on the dialog's Cancel button, such as 'Close' or 'Keep'; 'Cancel' when empty. Can be bound to a column.
+ */
+export type CancelLabel = string;
+/**
+ * The page to open after a successful save, such as the list page after a record was deleted on its own detail page (e.g. '/devices'). A '*' segment keeps the current page's segment at that position, and {{label}} takes the Navigation Variable of that label. Empty stays on the page. Not used with Save on Change. A dialog opened by a URL parameter closes and drops the parameter on its own.
+ */
+export type PostSubmitNavigation = string;
 /**
  * The variable name used in the route string. Reference this in your route using the {{label}} syntax. Use descriptive names like 'temperature', 'status', 'deviceName'.
  */
@@ -70,9 +78,9 @@ export type Label = string;
  */
 export type Value = string;
 /**
- * Array of variable definitions for dynamic route segment substitution. Each variable has a label (used in the route string as {{label}}) and a value (the replacement text). Values can be static or bound to data columns for real-time updates.
+ * Values for the {{label}} placeholders of Post-Submit Navigation: a label and a value, static or bound to a column such as the record's key.
  */
-export type PostDeleteNavigationVariables = {
+export type NavigationVariables = {
     label?: Label;
     value?: Value;
     [k: string]: unknown;
@@ -253,10 +261,9 @@ export interface FormConfiguration {
     openParameter?: OpenOnURLParameter;
     formDialogSize?: FormDialogSize;
     accentColor?: HighlightColor;
-    deleteButton?: ShowDeleteButton;
-    deleteFlagColumn?: DeleteFlagColumn;
-    deleteNavigationRoute?: PostDeleteNavigation;
-    variables?: PostDeleteNavigationVariables;
+    buttonLabels?: ButtonLabels;
+    submitNavigationRoute?: PostSubmitNavigation;
+    variables?: NavigationVariables;
     fieldLayout?: FieldLayout;
     formFields?: FormFields;
     [k: string]: unknown;
@@ -301,9 +308,12 @@ export interface HighlightColor {
     [k: string]: unknown;
 }
 /**
- * The target table column used to mark records as deleted when the delete button is clicked. This MUST be a boolean column. If the target table has such a deleted_flag column, it should be specified here regardless of the delete button setting.
+ * The texts on the form's buttons: Submit (saves), Reset (back to the pre-filled values; only in a form shown in the tile) and Cancel (closes the dialog of the Form Open Button without saving). Empty keeps 'Submit', 'Reset' and 'Cancel'. A delete form is a form whose Submit says 'Delete' and that writes the record's key and its deleted column, both from hidden fields (the deleted checkbox with defaultValueBoolean true).
  */
-export interface DeleteFlagColumn {
+export interface ButtonLabels {
+    submitLabel?: SubmitLabel;
+    resetLabel?: ResetLabel;
+    cancelLabel?: CancelLabel;
     [k: string]: unknown;
 }
 /**
