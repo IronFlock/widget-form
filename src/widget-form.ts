@@ -2063,6 +2063,14 @@ export class WidgetForm extends LitElement {
             gap: 8px;
         }
 
+        /* Material's focus ring (3px, 2px outside the button) is heavy for
+           the slim action bar: 2px, 1px outside. */
+        .form-actions,
+        .form [slot='actions'] {
+            --md-focus-ring-width: 2px;
+            --md-focus-ring-outward-offset: 1px;
+        }
+
         h3 {
             margin: 0;
             overflow: hidden;
