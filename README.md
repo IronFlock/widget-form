@@ -36,7 +36,7 @@ npm i @ironflock/widget-form
 | ------------------ | ---------------------------------------- | ---------------------------------------------------------------- |
 | `data-submit`      | Array of field/value mappings            | Fired when the form is submitted                                 |
 | `file-data-submit` | `{ items, waitUntil }` (see File Fields) | Fired instead of `data-submit` when the save includes a new file |
-| `nav-submit`       | `{ path }`                               | After Delete, with the resolved `deleteNavigationRoute`          |
+| `nav-submit`       | `{ path }`                               | After a save, with the resolved `submitNavigationRoute`            |
 | `param-submit`     | `{ params: { [openParameter]: undefined } }` | When a dialog opened by a URL parameter closes (see Open on URL Parameter) |
 
 ## Configuration
@@ -52,6 +52,9 @@ interface FormConfiguration {
     formButtonStyle?: FormButtonStyle // How that button looks
     openParameter?: string // The URL parameter that opens that dialog instead of the button
     formDialogSize?: FormDialogSize // Minimum size of that dialog
+    buttonLabels?: ButtonLabels // Texts of Submit, Reset and Cancel
+    submitNavigationRoute?: string // Page to open after a Submit
+    variables?: { label: string; value: string }[] // {{label}} values for the navigation routes
     fieldLayout?: FieldLayout // How the fields share rows (see Layout)
     formFields?: FormField[]
 }
@@ -81,7 +84,33 @@ Every field except `fab` can be bound to a column, so the button can follow data
 
 ### Save on Change
 
-With `autoSubmit: true` (and no `formButton`) the form has no Reset or Submit button: every change saves the whole form, as Submit would. A checkbox, dropdown or picked colour saves at once; text, numbers and dates save when the field loses focus or on Enter. An invalid field blocks the save and shows its error, as Submit does. After a save the fields keep what was entered rather than going back to their pre-filled values, so bind those to the stored row and they follow it. A Delete button stays, and "Saving…" shows while a file is stored. For a single on/off setting, `widget-switch` with a `targetColumn` is the better fit: it shows the stored position and writes a row per click.
+With `autoSubmit: true` (and no `formButton`) the form has no Reset or Submit button: every change saves the whole form, as Submit would. A checkbox, dropdown or picked colour saves at once; text, numbers and dates save when the field loses focus or on Enter. An invalid field blocks the save and shows its error, as Submit does. After a save the fields keep what was entered rather than going back to their pre-filled values, so bind those to the stored row and they follow it. "Saving…" shows while a file is stored. For a single on/off setting, `widget-switch` with a `targetColumn` is the better fit: it shows the stored position and writes a row per click.
+
+### Buttons
+
+A form shown in the tile has Reset and Submit below its fields; the dialog of the Form Open Button has Cancel and Submit (no Reset). Save on Change has neither Reset nor Submit. `buttonLabels` sets their texts:
+
+```ts
+interface ButtonLabels {
+    submitLabel?: string // 'Submit' when empty
+    resetLabel?: string // 'Reset' when empty; forms shown in the tile
+    cancelLabel?: string // 'Cancel' when empty; the dialog
+}
+```
+
+The labels can be bound to a column; a numeric value is shown as it is. Submit takes the Highlight Color (`accentColor`). `submitNavigationRoute` opens a page after a save: `*` keeps the current page's segment at that position, and `{{label}}` takes a value from `variables`.
+
+### Deleting Records
+
+Records are soft-deleted: the table has a boolean `deleted` column, and a delete saves the record's key with `deleted` set to `true`. There is no Delete button; a delete form is a separate form whose Submit says "Delete":
+
+- `buttonLabels.submitLabel: 'Delete'`, and a red `accentColor`.
+- Two hidden fields (`hiddenField: true`): the key column, with `preFilledValue` bound to the record as in an edit form, and a `checkbox` on the `deleted` column with `defaultValueBoolean: true`.
+- As a confirmation dialog from a table: `formButton: true`, `openParameter: 'delete'`, a title such as "Delete this record?", `cancelLabel: 'Keep'`, and a widget-table `edit` column with `parameterKey: 'delete'` and `iconName: 'delete'`. The dialog closes after the save. On the record's own page instead, `submitNavigationRoute` leads back to the list.
+
+Widgets that list the records use the latest filter with `deleted` empty or `false`. An edit form can add a hidden checkbox on `deleted` with `defaultValueBoolean: false`, so saving a deleted record restores it. The demo shows a delete form with `?confirm`.
+
+**Breaking change in 2.0.0.** `deleteButton`, `deleteFlagColumn` and `deleteNavigationRoute` are gone, and `variables` now serves `submitNavigationRoute`. A form moved to 2.x loses its Delete button and no longer writes the flag column on save: rebuild deletion as a delete form as above, and add the hidden `deleted` checkbox (`false`) to edit forms that relied on the flag.
 
 ### Dialog Size
 
@@ -98,9 +127,9 @@ Each value is a number with an optional unit: `px` (assumed when there is none),
 
 ### Open on URL Parameter
 
-With `formButton: true` and `openParameter` set to a parameter name, such as `edit`, the form is an edit dialog that another widget opens: on a board the tile shows no button, and the dialog is open while the page URL carries the parameter (`?edit=press-1`). A `widget-table` column of type `edit` sets it to the clicked row's key; so can a link. Closing the dialog (Cancel, Submit, Delete) removes the parameter again, so the same row can open it again, and the browser's Back button closes it as well.
+With `formButton: true` and `openParameter` set to a parameter name, such as `edit`, the form is an edit dialog that another widget opens: on a board the tile shows no button, and the dialog is open while the page URL carries the parameter (`?edit=press-1`). A `widget-table` column of type `edit` sets it to the clicked row's key; so can a link. Closing the dialog (Cancel or Submit) removes the parameter again, so the same row can open it again, and the browser's Back button closes it as well.
 
-The record comes through the fields' pre-filled values, bound in Studio to the record's latest row filtered by the same parameter: a Parameter filter named `edit` plus the Latest switch, on each bound field, and the record's key column as a hidden field with the same binding, so a save writes the same entity. While Studio re-queries those bindings after the parameter changed, the dialog shows a progress bar and its Save, Delete and Reset buttons are disabled; the fields then rebuild from the record.
+The record comes through the fields' pre-filled values, bound in Studio to the record's latest row filtered by the same parameter: a Parameter filter named `edit` plus the Latest switch, on each bound field, and the record's key column as a hidden field with the same binding, so a save writes the same entity. While Studio re-queries those bindings after the parameter changed, the dialog shows a progress bar and its Submit button is disabled; the fields then rebuild from the record.
 
 ```yaml
 # board-template.yml (Studio stores the same)
@@ -124,7 +153,7 @@ formFields:
       preFilledValue: { valueRef: { tablename: machines, column: name, queryParams: { limit: 1, filterAnd: [...] } } }
 ```
 
-Keep a "New" form as a tile of its own: with the parameter absent, Studio drops the filter and the bindings would deliver the newest record. A Delete with `deleteNavigationRoute` drops the parameter in the same navigation. Outside a board (the Widget Editor's preview, where there is no route) the button stays, so the form can be tried; a bookmarked URL with the parameter opens the dialog on load.
+Keep a "New" form as a tile of its own: with the parameter absent, Studio drops the filter and the bindings would deliver the newest record. A save with `submitNavigationRoute` drops the parameter in the same navigation. Outside a board (the Widget Editor's preview, where there is no route) the button stays, so the form can be tried; a bookmarked URL with the parameter opens the dialog on load.
 
 ### Dialog Colours
 
@@ -201,7 +230,7 @@ type FieldWidth = 'full' | 'three-quarters' | 'two-thirds' | 'half' | 'third' | 
 
 `density: 'compact'` makes the form smaller for desktop boards used with a mouse, and is what a form dropped on a board starts with (the default config sets it). Unset, a form is comfortable, Material's size, which is how forms made before stay. Fields are 40px high instead of Material's 56px, with 14px text, the buttons are 32px high, and the gaps between fields and rows shrink. The Form Open Button keeps its own `size`.
 
-In a tile (without `formButton`), the Delete, Reset and Submit buttons stay at the bottom while the fields scroll above them, with a thin line between the two while more fields are hidden below. A short form keeps its buttons right under its last field. In a tile with less than about 160px left under its title, the fields and the buttons scroll together.
+In a tile (without `formButton`), the action buttons stay at the bottom while the fields scroll above them, with a thin line between the two while more fields are hidden below. A short form keeps its buttons right under its last field. In a tile with less than about 160px left under its title, the fields and the buttons scroll together.
 
 #### Sections
 

@@ -9,7 +9,7 @@
             "A record with a file such as a PDF (type 'file'), or a password or token (type 'secret', into a 'secret: true' column).",
             "Editing the record a table's 'edit' column picked: openParameter 'edit', and preFilledValue bound to the latest row filtered by it.",
             "A long form as a compact sheet: fields side by side (width), headed groups (type section), fieldLayout.density compact.",
-            "Records deleted or flagged as deleted from the board (deleteButton, deleteFlagColumn)."
+            "Deleting a record (soft delete), with a confirmation dialog: a separate form with Submit labelled 'Delete' (buttonLabels) that writes the record's key and deleted = true from hidden fields."
         ],
         "notFor": [
             "Narrowing what other widgets show — use widget-filter-dropdown or widget-filter-calendar.",
@@ -162,40 +162,52 @@
             "type": "color",
             "order": 5.5
         },
-        "deleteButton": {
-            "title": "Show Delete Button",
-            "description": "When enabled, shows a delete button that allows users to remove existing entries.",
-            "dataDrivenDisabled": true,
-            "type": "boolean",
-            "order": 6
+        "buttonLabels": {
+            "title": "Button Labels",
+            "description": "The texts on the form's buttons: Submit (saves), Reset (back to the pre-filled values; only in a form shown in the tile) and Cancel (closes the dialog of the Form Open Button without saving). Empty keeps 'Submit', 'Reset' and 'Cancel'. A delete form is a form whose Submit says 'Delete' and that writes the record's key and its deleted column, both from hidden fields (the deleted checkbox with defaultValueBoolean true).",
+            "type": "object",
+            "order": 6,
+            "properties": {
+                "submitLabel": {
+                    "title": "Submit Label",
+                    "description": "Text on the button that saves the form, such as 'Save', 'Add reading' or 'Delete'; 'Submit' when empty. It takes the Highlight Color, so give a delete form a red one. Can be bound to a column; a number is shown as it is.",
+                    "type": "string",
+                    "order": 1
+                },
+                "resetLabel": {
+                    "title": "Reset Label",
+                    "description": "Text on the Reset button of a form shown in the tile; 'Reset' when empty. A dialog has no Reset. Can be bound to a column.",
+                    "type": "string",
+                    "condition": {
+                        "relativePath": "../../formButton",
+                        "showIfValueIn": [false]
+                    },
+                    "order": 2
+                },
+                "cancelLabel": {
+                    "title": "Cancel Label",
+                    "description": "Text on the dialog's Cancel button, such as 'Close' or 'Keep'; 'Cancel' when empty. Can be bound to a column.",
+                    "type": "string",
+                    "condition": {
+                        "relativePath": "../../formButton",
+                        "showIfValueIn": [true]
+                    },
+                    "order": 3
+                }
+            }
         },
-        "deleteFlagColumn": {
-            "title": "Delete-Flag Column",
-            "description": "The target table column used to mark records as deleted when the delete button is clicked. This MUST be a boolean column. If the target table has such a deleted_flag column, it should be specified here regardless of the delete button setting.",
-            "dataDrivenDisabled": true,
-            "type": "targetColumn",
+        "submitNavigationRoute": {
+            "title": "Post-Submit Navigation",
+            "description": "The page to open after a successful save, such as the list page after a record was deleted on its own detail page (e.g. '/devices'). A '*' segment keeps the current page's segment at that position, and {{label}} takes the Navigation Variable of that label. Empty stays on the page. Not used with Save on Change. A dialog opened by a URL parameter closes and drops the parameter on its own.",
+            "type": "string",
             "order": 7
         },
-        "deleteNavigationRoute": {
-            "title": "Post-Delete Navigation",
-            "description": "The destination path to route to after delete. Use for navigating to a home or main page.",
-            "order": 8,
-            "condition": {
-                "relativePath": "../deleteButton",
-                "showIfValueIn": [true]
-            },
-            "type": "string"
-        },
         "variables": {
-            "title": "Post-Delete Navigation Variables",
-            "description": "Array of variable definitions for dynamic route segment substitution. Each variable has a label (used in the route string as {{label}}) and a value (the replacement text). Values can be static or bound to data columns for real-time updates.",
+            "title": "Navigation Variables",
+            "description": "Values for the {{label}} placeholders of Post-Submit Navigation: a label and a value, static or bound to a column such as the record's key.",
             "type": "array",
             "dataDrivenDisabled": true,
-            "condition": {
-                "relativePath": "../deleteButton",
-                "showIfValueIn": [true]
-            },
-            "order": 9,
+            "order": 8,
             "items": {
                 "type": "object",
                 "properties": {

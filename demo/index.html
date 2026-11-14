@@ -91,7 +91,11 @@
             // ?auto (Save on Change: no Reset or Submit, every change saves),
             // ?auto=settings (Save on Change on a two-setting form whose
             // pre-filled values the stand-in host updates after each save, as
-            // bindings to the stored row would).
+            // bindings to the stored row would),
+            // ?confirm (a delete form: a dialog with Cancel labelled "Keep"
+            // and Submit labelled "Delete" that writes the record's key and
+            // deleted = true from two hidden fields),
+            // ?submit=<label> / ?reset=<label> / ?cancel=<label> (Button Labels).
             const params = new URLSearchParams(location.search)
             const openKey = params.get('open')
             const themes = { light, chalk, vintage }
@@ -225,9 +229,33 @@
                           return [placed]
                       })
 
+            const confirm = params.has('confirm')
+            const confirmFields = [
+                {
+                    label: 'Key',
+                    type: 'textfield',
+                    hiddenField: true,
+                    preFilledValue: 'press-1',
+                    targetColumn: { tablename: 'machines', column: 'key' }
+                },
+                {
+                    label: 'Deleted',
+                    type: 'checkbox',
+                    hiddenField: true,
+                    defaultValueBoolean: true,
+                    targetColumn: { tablename: 'machines', column: 'deleted' }
+                }
+            ]
+
             const data = {
                 ...defaultData,
-                formButton: params.has('dialog') || openKey !== null,
+                ...(confirm ? { title: 'Delete press-1?' } : {}),
+                buttonLabels: {
+                    submitLabel: params.get('submit') ?? (confirm ? 'Delete' : undefined),
+                    resetLabel: params.get('reset') ?? undefined,
+                    cancelLabel: params.get('cancel') ?? (confirm ? 'Keep' : undefined)
+                },
+                formButton: params.has('dialog') || openKey !== null || confirm,
                 autoSubmit: params.has('auto'),
                 openParameter: openKey ?? undefined,
                 formButtonStyle: {
@@ -237,13 +265,17 @@
                     cornerRadius: params.has('radius') ? Number(params.get('radius')) : undefined,
                     iconName: params.get('icon') ?? undefined
                 },
-                accentColor: params.get('accent') ?? undefined,
+                accentColor: params.get('accent') ?? (confirm ? '#d32f2f' : undefined),
                 fieldLayout: {
                     defaultWidth: layout === null || layout === 'none' ? undefined : params.get('width') || 'half',
                     minFieldWidth: params.has('minw') ? Number(params.get('minw')) : undefined,
                     density: params.get('density') ?? (layout === 'none' ? undefined : defaultData.fieldLayout?.density)
                 },
-                formFields: params.get('auto') === 'settings' ? settingsFields : formFields
+                formFields: confirm
+                    ? confirmFields
+                    : params.get('auto') === 'settings'
+                      ? settingsFields
+                      : formFields
             }
 
             const tag = unsafeStatic(`widget-form-${packageJson.version}`)
