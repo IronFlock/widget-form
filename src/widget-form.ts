@@ -483,6 +483,58 @@ const COLOR_MESSAGE = 'Enter a color, such as #1e88e5, rgb(30, 136, 229) or teal
 const colorKey = (value: unknown): string | undefined =>
     typeof value === 'string' && value.trim() ? value : undefined
 
+// Date and time fields. The native datetime-local input shows and returns the
+// viewer's wall time without a zone ('2026-11-14T16:11'), and fleetdb reads a
+// timestamp without an offset as UTC, so sending the input's text moved every
+// saved time by the viewer's UTC offset (and again on each save of an edit
+// form). An instant therefore goes out as ISO 8601 UTC, and one coming in is
+// shown in the viewer's zone. In: epoch milliseconds (fleetdb's timestamps),
+// as a number or digits, or ISO text with or without seconds and an offset,
+// with 'T' or a space (Postgres' '2026-11-14 16:11:00+00'). Text without an
+// offset is the viewer's wall time, as the input itself means it.
+const DATETIME_TEXT =
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,9}))?)?)?\s*(Z|[+-]\d{2}(?::?\d{2})?)?$/i
+
+const parseInstant = (value: unknown): Date | undefined => {
+    const valid = (date: Date) => (Number.isNaN(date.getTime()) ? undefined : date)
+    if (typeof value === 'number') return Number.isFinite(value) ? valid(new Date(value)) : undefined
+    if (typeof value !== 'string') return undefined
+    const text = value.trim()
+    if (/^-?\d+(\.\d+)?$/.test(text)) return valid(new Date(Number(text)))
+    const match = DATETIME_TEXT.exec(text)
+    if (!match) return undefined
+    const [, year, month, day, hours = '0', minutes = '0', seconds = '0', fraction = '', zone] = match
+    const [y, mo, d, h, mi, s] = [year, month, day, hours, minutes, seconds].map(Number)
+    if (mo < 1 || mo > 12 || h > 23 || mi > 59 || s > 59) return undefined
+    const ms = Number(fraction.padEnd(3, '0').slice(0, 3))
+    const date = new Date(0)
+    if (zone) {
+        date.setUTCFullYear(y, mo - 1, d)
+        date.setUTCHours(h, mi, s, ms)
+        if (date.getUTCDate() !== d) return undefined
+        if (zone.toUpperCase() === 'Z') return date
+        const [, sign, offsetHours, offsetMinutes = '0'] = /^([+-])(\d{2}):?(\d{2})?$/.exec(zone)!
+        const offset = (Number(offsetHours) * 60 + Number(offsetMinutes)) * (sign === '-' ? -1 : 1)
+        return valid(new Date(date.getTime() - offset * 60_000))
+    }
+    date.setFullYear(y, mo - 1, d)
+    date.setHours(h, mi, s, ms)
+    return date.getDate() === d ? valid(date) : undefined
+}
+
+// An instant as the datetime-local input's value: the viewer's wall time, to
+// the minute ('' for none). Seconds would add segments to the input and fail
+// its default 60 s step.
+const datetimeLocalValue = (value: unknown): string => {
+    const date = parseInstant(value)
+    if (!date) return ''
+    const pad = (n: number, width = 2) => String(n).padStart(width, '0')
+    return (
+        `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+        `T${pad(date.getHours())}:${pad(date.getMinutes())}`
+    )
+}
+
 const surfaceCache = new Map<string, string>()
 
 // Paint the given colours, bottom first, over white, as the screen composites
@@ -1084,6 +1136,10 @@ export class WidgetForm extends LitElement {
             }
 
             const rawValue = this.currentRawValue(field, i, formData)
+            if (field.type === 'datetime') {
+                submitData.push({ ...targetColumn, value: this.datetimeValue(field, rawValue) })
+                return
+            }
             submitData.push({ ...targetColumn, value: this.formatValue(rawValue, field.type ?? 'textfield') })
         })
 
@@ -1370,6 +1426,19 @@ export class WidgetForm extends LitElement {
         }
     }
 
+    // What a date and time field stores: the instant as ISO 8601 UTC, or null
+    // when empty. A field still showing its pre-filled instant writes that
+    // back exactly, seconds included, which the input (to the minute) drops.
+    // Text that is no date can only come from a pre-filled or default key
+    // (the input yields a valid value or ''), and is written back unchanged.
+    datetimeValue(field: Column, raw: unknown): string | null {
+        const preFilled = parseInstant(field.preFilledValue)
+        if (preFilled && raw === datetimeLocalValue(preFilled.getTime())) return preFilled.toISOString()
+        const instant = parseInstant(raw)
+        if (instant) return instant.toISOString()
+        return typeof raw === 'string' && raw.trim() ? raw : null
+    }
+
     // Resolve a field's current raw (string) value, applying the same
     // empty-falls-back-to-default rule used at submit so condition evaluation and
     // submission agree. Checkbox is normalized to 'true'/'false' (matching the
@@ -1579,7 +1648,7 @@ export class WidgetForm extends LitElement {
                 .name="column-${i}"
                 .label="${field.label ?? ''}"
                 type="datetime-local"
-                .value="${field.preFilledValue ?? field.defaultValue ?? ''}"
+                .value="${datetimeLocalValue(field.preFilledValue ?? field.defaultValue)}"
                 supporting-text=${field.description ?? ''}
                 ?required=${field.required && !field.defaultValue && !field.preFilledValue}
             ></md-outlined-text-field>

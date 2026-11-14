@@ -118,6 +118,13 @@ A `color` field (`renderColorField`) is an `md-outlined-text-field` (200px on a 
 - **The swatch** shows the typed colour, else the default (what a save stores then), over a checkerboard; with neither, or with text that is no colour, a diagonal stroke (`[empty]`). `typedColors` holds the text since it was edited, with the pre-filled value it was typed over: a new pre-filled value resets the text field through its `.value` binding, and the swatch then follows that again. `willUpdate()` prunes it for fields a condition hides, like `chosenFiles`, and reset clears it. Picking keeps the alpha of a translucent colour typed before, as the native picker has none.
 - **Keys.** `preFilledValueColor` and `defaultValueColor` are `type: "color"` twins of `preFilledValue`/`defaultValue`, so the editor shows its colour picker (it stores hex, `''` when cleared); a blank one falls back to the plain key, which the AI may write. Like file and secret fields, colour fields stay out of `default-data.json`; the demo adds two.
 
+### Date and time fields
+
+A `datetime` field is an `md-outlined-text-field type="datetime-local"`, which shows and returns the viewer's wall time with no zone (`2026-11-14T16:11`). Up to 1.3.0 that text was saved as it was, and fleetdb reads a timestamp without an offset as UTC, so every saved time moved by the viewer's UTC offset (one hour in winter, two in summer in Germany), and again on each save of an untouched edit form.
+
+- **Out** (`datetimeValue()`): the instant as ISO 8601 UTC (`toISOString()`), null when empty. A field still showing its pre-filled instant writes that instant back exactly, seconds and milliseconds included.
+- **In** (`parseInstant()`, `datetimeLocalValue()`): pre-filled and default values may be epoch milliseconds (fleetdb's timestamps, as a number or digits) or ISO text, with `T` or a space, with or without seconds and an offset (`Z`, `+01`, `+0100`, `+01:00`). Text without an offset is the viewer's local time, as the input means it. The input gets the viewer's wall time to the minute: seconds would add segments and fail its default 60 s step. Text that is no date shows an empty field; as a hidden field's value, or as a default, it is written back unchanged.
+
 ### Build pipeline notes
 
 - `vite.config.ts` externalizes `@material/web/*` and `lit-flatpickr` so consumers provide them. `tslib` is aliased to its ES module entry.
