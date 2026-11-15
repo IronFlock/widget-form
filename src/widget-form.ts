@@ -633,24 +633,40 @@ const accentColors = (
 
 // Size tokens of the regular form open button (Floating Action Button off):
 // 32, 40 and 56px tall, as Material 3's extra small, small and medium
-// buttons. Medium is Material Web's own 40px button and needs none.
+// buttons. Medium is Material Web's own 40px button and needs none. The
+// spaces of a trailing icon (Horizontal Alignment right) mirror the leading
+// ones, so the icon keeps the same distance from the button's edge.
 const OPEN_BUTTON_SIZES: Record<string, string> = {
     small: `--md-filled-button-container-height: 32px; --md-filled-button-icon-size: 18px;
         --md-filled-button-label-text-size: 14px; --md-filled-button-label-text-line-height: 20px;
         --md-filled-button-with-leading-icon-leading-space: 12px;
-        --md-filled-button-with-leading-icon-trailing-space: 16px;`,
+        --md-filled-button-with-leading-icon-trailing-space: 16px;
+        --md-filled-button-with-trailing-icon-leading-space: 16px;
+        --md-filled-button-with-trailing-icon-trailing-space: 12px;`,
     large: `--md-filled-button-container-height: 56px; --md-filled-button-icon-size: 24px;
         --md-filled-button-label-text-size: 16px; --md-filled-button-label-text-line-height: 24px;
         --md-filled-button-with-leading-icon-leading-space: 24px;
-        --md-filled-button-with-leading-icon-trailing-space: 32px;`
+        --md-filled-button-with-leading-icon-trailing-space: 32px;
+        --md-filled-button-with-trailing-icon-leading-space: 32px;
+        --md-filled-button-with-trailing-icon-trailing-space: 24px;`
 }
 
-// The trailing space of that button with an empty Label Text, by size: its
-// leading space less the 8px gap Material keeps after the icon even with no
-// label, which centres the icon.
-const ICON_ONLY_TRAILING_SPACE: Record<string, string> = { small: '4px', medium: '8px', large: '16px' }
+// The space on the label's side of that button with an empty Label Text, by
+// size: the icon's side less the 8px gap Material keeps next to the icon
+// even with no label, which centres the icon.
+const ICON_ONLY_LABEL_SPACE: Record<string, string> = { small: '4px', medium: '8px', large: '16px' }
 
-const BUTTON_SIZES = ['small', 'medium', 'large']
+// Each list starts with the value a bound column's unknown text gives.
+const BUTTON_SIZES = ['medium', 'small', 'large']
+const HORIZONTAL_ALIGNS = ['left', 'right']
+const VERTICAL_ALIGNS = ['top', 'center', 'bottom']
+
+// A bindable enum setting, trimmed and lower-cased, or the fallback (the
+// first value) when the column holds anything else.
+const enumSetting = (value: unknown, values: string[]): string => {
+    const name = typeof value === 'string' ? value.trim().toLowerCase() : ''
+    return values.includes(name) ? name : values[0]
+}
 
 // A Form Open Button Style colour, or '' for the default. Every field but
 // fab can be bound to a column, so the value is table data that lands in a
@@ -675,13 +691,12 @@ const FAB_SHAPE_SIZES = ['', 'small-', 'large-']
 /**
  * Form Open Button Style with every field checked, since all but fab can be
  * bound and then carry whatever the column holds: a label may be a number, an
- * unknown size is medium, and a blank, non-string or invalid colour, corner
+ * unknown size is medium, an unknown alignment left or top, and a blank, non-string or invalid colour, corner
  * radius or icon name falls back to the default ('' for colours and the
  * radius, 'add' for the icon).
  */
 const openButtonStyle = (style: FormConfiguration['formButtonStyle']) => {
-    const { label, size, iconName } = style ?? {}
-    const sizeName = typeof size === 'string' ? size.trim().toLowerCase() : ''
+    const { label, iconName } = style ?? {}
     return {
         fab: style?.fab !== false,
         label:
@@ -690,7 +705,11 @@ const openButtonStyle = (style: FormConfiguration['formButtonStyle']) => {
                 : typeof label === 'number' && Number.isFinite(label)
                   ? String(label)
                   : '',
-        size: BUTTON_SIZES.includes(sizeName) ? sizeName : 'medium',
+        // Bindable, so a column's text 'true' counts as well.
+        fullWidth: style?.fullWidth === true || String(style?.fullWidth).trim().toLowerCase() === 'true',
+        size: enumSetting(style?.size, BUTTON_SIZES),
+        horizontalAlign: enumSetting(style?.horizontalAlign, HORIZONTAL_ALIGNS),
+        verticalAlign: enumSetting(style?.verticalAlign, VERTICAL_ALIGNS),
         cornerRadius: buttonRadius(style?.cornerRadius),
         bgColor: buttonColor(style?.bgColor),
         color: buttonColor(style?.color),
@@ -2401,10 +2420,39 @@ export class WidgetForm extends LitElement {
             --md-fab-label-text-color: white;
         }
 
+        /* Form Open Button mode: the header fills the tile, and Horizontal and
+           Vertical Alignment place the button in it (top left unset, where
+           it always sat). A right-aligned button keeps its right edge.
+           safe: a tile smaller than the button keeps the button's top and
+           left edge in view, as before, rather than pushing them out. */
+        :host([fab-mode]) .header {
+            flex: 1 1 auto;
+            min-height: 0;
+            align-items: flex-start;
+        }
+        :host([fab-mode]) .header[halign='right'] {
+            justify-content: flex-end;
+            justify-content: safe flex-end;
+        }
+        :host([fab-mode]) .header[valign='center'] {
+            align-items: center;
+            align-items: safe center;
+        }
+        :host([fab-mode]) .header[valign='bottom'] {
+            align-items: flex-end;
+            align-items: safe flex-end;
+        }
+
         /* A long label is cut with an ellipsis, inside the tile. */
         .open-btn {
             margin: 8px;
             max-width: calc(100% - 16px);
+        }
+
+        /* Full Width: the regular button fills the header less its margins;
+           Material centres the icon and label inside it. */
+        .open-btn[stretch] {
+            flex: 1 1 auto;
         }
 
         /* Density compact (updated() sets the attribute): fields 40px high
@@ -2594,7 +2642,11 @@ export class WidgetForm extends LitElement {
                 }
                 ${collapse}
             </style>
-            <div class="header">
+            <div
+                class="header"
+                halign=${this.inputData?.formButton ? buttonStyle.horizontalAlign : nothing}
+                valign=${this.inputData?.formButton ? buttonStyle.verticalAlign : nothing}
+            >
                 ${this.inputData?.formButton && !parameterOpens
                     ? !buttonStyle.fab
                         ? this.renderOpenButton(buttonStyle, fabLabel, bgColorOpaque)
@@ -2681,7 +2733,10 @@ export class WidgetForm extends LitElement {
 
     /**
      * The regular form open button (Floating Action Button off): Material's
-     * filled button with the icon and the Label Text. An empty Label Text
+     * filled button with the icon and the Label Text, the icon after the
+     * label when it is right-aligned (Material's trailing icon, so its
+     * spaces mirror the leading icon's), and across the tile with Full
+     * Width. An empty Label Text
      * stays empty on screen; screen readers then get the FAB's name, as the
      * icon is hidden from them. It takes the FAB's background; its label and
      * icon need to read on that, so unset they are black or white by
@@ -2690,6 +2745,7 @@ export class WidgetForm extends LitElement {
      */
     renderOpenButton(style: ReturnType<typeof openButtonStyle>, ariaLabel: string, surface: string) {
         const { label, size } = style
+        const trailing = style.horizontalAlign === 'right'
         const container = String((style.bgColor || this.theme?.theme_object?.color?.[0]) ?? '#9064f7')
         const content = style.color || onColor(opaqueSurface([surface, container]))
         const tokens = [
@@ -2703,12 +2759,16 @@ export class WidgetForm extends LitElement {
             `--md-filled-button-pressed-state-layer-color: ${content};`,
             OPEN_BUTTON_SIZES[size] ?? '',
             style.cornerRadius ? `--md-filled-button-container-shape: ${style.cornerRadius};` : '',
-            label ? '' : `--md-filled-button-with-leading-icon-trailing-space: ${ICON_ONLY_TRAILING_SPACE[size]};`
+            label
+                ? ''
+                : `--md-filled-button-with-${trailing ? 'trailing-icon-leading' : 'leading-icon-trailing'}-space: ${ICON_ONLY_LABEL_SPACE[size]};`
         ]
         return html`<md-filled-button
             class="open-btn"
             type="button"
             has-icon
+            ?trailing-icon=${trailing}
+            ?stretch=${style.fullWidth}
             aria-label=${label ? nothing : ariaLabel}
             style=${tokens.join(' ')}
             @click=${this.openFormDialog}

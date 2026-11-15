@@ -30,6 +30,18 @@ export type FloatingActionButton = boolean;
  */
 export type LabelText = string;
 /**
+ * Stretches the regular button across the whole width of the tile, less a small margin, with its icon and Label Text centred: a standard-sized button whose width follows the tile, for example a row of equally wide buttons in tiles of the same width. Off (the default), the button is as wide as its label. Horizontal Alignment then only sets the icon's side: before the label (left) or after it (right). Only applies when Floating Action Button is disabled. Can be bound to a column holding true or false.
+ */
+export type FullWidth = boolean;
+/**
+ * Where the form open button sits across the tile: left (the default) or right. On a regular button it also sets the icon's side: left-aligned, the icon comes first and a longer Label Text makes the button grow to the right; right-aligned, the icon comes after the label and the button grows to the left, so its right edge stays in place. Can be bound to a column holding 'left' or 'right'; any other value gives left.
+ */
+export type HorizontalAlignment = "left" | "right";
+/**
+ * Where the form open button sits in the tile's height: top (the default), center or bottom. Can be bound to a column holding 'top', 'center' or 'bottom'; any other value gives top.
+ */
+export type VerticalAlignment = "top" | "center" | "bottom";
+/**
  * The size of the form open button: small, medium (the default) or large. A floating action button is 40, 56 or 96px; a regular button is 32, 40 or 56px tall. Can be bound to a column holding 'small', 'medium' or 'large'; any other value gives medium.
  */
 export type Size = "small" | "medium" | "large";
@@ -274,6 +286,9 @@ export interface FormConfiguration {
 export interface FormOpenButtonStyle {
     fab?: FloatingActionButton;
     label?: LabelText;
+    fullWidth?: FullWidth;
+    horizontalAlign?: HorizontalAlignment;
+    verticalAlign?: VerticalAlignment;
     size?: Size;
     cornerRadius?: CornerRadius;
     bgColor?: BackgroundColor;

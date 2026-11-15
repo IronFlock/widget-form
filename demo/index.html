@@ -75,7 +75,9 @@
             // Demo switches: ?theme=chalk|vintage, ?dialog (Form Open Button),
             // ?icon=<Material icon name> (its icon), ?label=<text> (a regular
             // button with this Label Text, Floating Action Button off; empty for
-            // only the icon), ?size=small|medium|large (its size), ?radius=<px>
+            // only the icon), ?size=small|medium|large (its size),
+            // ?halign=left|right and ?valign=top|center|bottom (its Horizontal
+            // and Vertical Alignment), ?full (its Full Width), ?radius=<px>
             // (its Corner Radius), ?accent=<colour> (Highlight Color), ?oldhost
             // (a Studio that does not know file-data-submit), ?layout (a Field
             // Layout, below), ?layout=none (no widths, new rows, sections or
@@ -261,7 +263,10 @@
                 formButtonStyle: {
                     fab: !params.has('label'),
                     label: params.get('label') ?? undefined,
+                    fullWidth: params.has('full'),
                     size: params.get('size') ?? undefined,
+                    horizontalAlign: params.get('halign') ?? undefined,
+                    verticalAlign: params.get('valign') ?? undefined,
                     cornerRadius: params.has('radius') ? Number(params.get('radius')) : undefined,
                     iconName: params.get('icon') ?? undefined
                 },
