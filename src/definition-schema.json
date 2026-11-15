@@ -4,6 +4,7 @@
     "aiSelection": {
         "dataShape": "Writes rather than reads: each formFields[] entry maps one input to a table column (targetColumn), and a save stores one row. Entries of type section head groups of fields, and width puts fields side by side.",
         "useWhen": [
+            "Creating an asset (a machine, a camera) from a 'New' button: a hidden field with generateId on the entity table's key column, so the form makes the new ID, and a field for the name.",
             "Data a person enters or corrects — manual readings, maintenance notes, quality checks, configuration values — with validation, defaults or fields shown only for some answers (conditionalDisplay).",
             "Settings that apply as soon as they change, with no Submit button: autoSubmit on a form shown in the tile.",
             "A record with a file such as a PDF (type 'file'), or a password or token (type 'secret', into a 'secret: true' column).",
@@ -361,6 +362,17 @@
                             "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", false]
                         },
                         "order": 3
+                    },
+                    "generateId": {
+                        "title": "Generate New ID",
+                        "type": "boolean",
+                        "description": "For a hidden field in a form that creates records (an asset list's 'New' form): the form saves a new random ID (a UUID) here, made on the first save and kept until the form resets, so each new record gets its own key and users never type one. Point it at the entity table's string key column and keep the name in a column of its own. Pre-filled and default values are ignored. Edit and delete forms leave it off and carry the record's key over as a pre-filled value.",
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../hiddenField",
+                            "showIfValueIn": [true]
+                        },
+                        "order": 3.1
                     },
                     "required": {
                         "title": "Required",

@@ -144,6 +144,10 @@ export type FieldWidthInGroup = "full" | "three-quarters" | "two-thirds" | "half
  */
 export type HiddenField = boolean;
 /**
+ * For a hidden field in a form that creates records (an asset list's 'New' form): the form saves a new random ID (a UUID) here, made on the first save and kept until the form resets, so each new record gets its own key and users never type one. Point it at the entity table's string key column and keep the name in a column of its own. Pre-filled and default values are ignored. Edit and delete forms leave it off and carry the record's key over as a pre-filled value.
+ */
+export type GenerateNewID = boolean;
+/**
  * When enabled, users must fill out this field before the form can be submitted. The form will show a validation error if left empty. Ignored when a default value is provided.
  */
 export type Required = boolean;
@@ -233,6 +237,7 @@ export type FormFields = {
     newRow?: StartANewRow;
     groupWidth?: FieldWidthInGroup;
     hiddenField?: HiddenField;
+    generateId?: GenerateNewID;
     required?: Required;
     description?: HintText;
     targetColumn?: TargetColumn;
