@@ -80,6 +80,33 @@
                         "showIfValueIn": [false]
                     }
                 },
+                "fullWidth": {
+                    "title": "Full Width",
+                    "description": "Stretches the regular button across the whole width of the tile, less a small margin, with its icon and Label Text centred: a standard-sized button whose width follows the tile, for example a row of equally wide buttons in tiles of the same width. Off (the default), the button is as wide as its label. Horizontal Alignment then only sets the icon's side: before the label (left) or after it (right). Only applies when Floating Action Button is disabled. Can be bound to a column holding true or false.",
+                    "type": "boolean",
+                    "default": false,
+                    "order": 2.1,
+                    "condition": {
+                        "relativePath": "../fab",
+                        "showIfValueIn": [false]
+                    }
+                },
+                "horizontalAlign": {
+                    "title": "Horizontal Alignment",
+                    "description": "Where the form open button sits across the tile: left (the default) or right. On a regular button it also sets the icon's side: left-aligned, the icon comes first and a longer Label Text makes the button grow to the right; right-aligned, the icon comes after the label and the button grows to the left, so its right edge stays in place. Can be bound to a column holding 'left' or 'right'; any other value gives left.",
+                    "type": "string",
+                    "order": 2.3,
+                    "enum": ["left", "right"],
+                    "enumLabels": ["Left", "Right"]
+                },
+                "verticalAlign": {
+                    "title": "Vertical Alignment",
+                    "description": "Where the form open button sits in the tile's height: top (the default), center or bottom. Can be bound to a column holding 'top', 'center' or 'bottom'; any other value gives top.",
+                    "type": "string",
+                    "order": 2.6,
+                    "enum": ["top", "center", "bottom"],
+                    "enumLabels": ["Top", "Center", "Bottom"]
+                },
                 "size": {
                     "title": "Size",
                     "description": "The size of the form open button: small, medium (the default) or large. A floating action button is 40, 56 or 96px; a regular button is 32, 40 or 56px tall. Can be bound to a column holding 'small', 'medium' or 'large'; any other value gives medium.",

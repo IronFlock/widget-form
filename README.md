@@ -68,6 +68,9 @@ With `formButton: true` the tile shows only a button that opens the form in a di
 interface FormButtonStyle {
     fab?: boolean // Floating action button (default); false for a regular button
     label?: string // Label Text of the regular button
+    fullWidth?: boolean // Regular button across the tile's width
+    horizontalAlign?: 'left' | 'right' // 'left' by default
+    verticalAlign?: 'top' | 'center' | 'bottom' // 'top' by default
     size?: 'small' | 'medium' | 'large'
     cornerRadius?: number // Corner radius in px, for both kinds of button
     bgColor?: string // Background colour
@@ -78,9 +81,13 @@ interface FormButtonStyle {
 
 By default (`fab` unset or `true`) it is a round Material floating action button that shows only the icon, 40, 56 or 96px by `size`. With `fab: false` it is a Material filled button with the icon and `label` (only the icon when `label` is empty), 32, 40 or 56px tall by `size`; a long label is cut with an ellipsis at the tile's edge. Unset, its label and icon are black or white, whichever reads on its background.
 
+`horizontalAlign` and `verticalAlign` place either button in the tile; unset, it sits top left. Left-aligned, the regular button has its icon first and a longer label grows it to the right. Right-aligned, the icon follows the label and the button grows to the left, keeping its right edge. In a tile smaller than the button, its top and left edges stay in view.
+
+`fullWidth: true` stretches the regular button across the tile, less its 8px margins, with the icon and label centred, so tiles of the same width give equally wide buttons. `horizontalAlign` then only sets the icon's side. The floating action button ignores it. A bound `'true'` counts as true.
+
 `cornerRadius` rounds the corners of either button, in px: `0` is square, and half the button's height or more is fully round (a circle for the floating action button, a pill for the regular button). Unset, the floating action button keeps Material's 12, 16 or 28px corners by `size`, and the regular button is a pill.
 
-Every field except `fab` can be bound to a column, so the button can follow data: a fault state can turn it red, swap its icon to `warning` and relabel it "Report fault". A bound value that does not fit falls back to the default: a size other than small, medium or large gives medium, an invalid colour the theme's, a corner radius that is not a number of 0 or more (numeric text counts) Material's corners, and an empty icon name `add`. A numeric label is shown as it is.
+Every field except `fab` can be bound to a column, so the button can follow data: a fault state can turn it red, swap its icon to `warning` and relabel it "Report fault". A bound value that does not fit falls back to the default: a size other than small, medium or large gives medium, an alignment other than left or right left, one other than top, center or bottom top, an invalid colour the theme's, a corner radius that is not a number of 0 or more (numeric text counts) Material's corners, and an empty icon name `add`. A numeric label is shown as it is.
 
 ### Save on Change
 
