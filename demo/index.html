@@ -97,6 +97,8 @@
             // ?confirm (a delete form: a dialog with Cancel labelled "Keep"
             // and Submit labelled "Delete" that writes the record's key and
             // deleted = true from two hidden fields),
+            // ?newid (an asset's "New" form: a name, and a hidden key field
+            // with Generate New ID, so every save logs a new machine_id),
             // ?submit=<label> / ?reset=<label> / ?cancel=<label> (Button Labels).
             const params = new URLSearchParams(location.search)
             const openKey = params.get('open')
@@ -249,15 +251,35 @@
                 }
             ]
 
+            // ?newid: an asset list's "New" form, whose hidden key field makes
+            // the new record's ID (Generate New ID); the name is a column.
+            const newId = params.has('newid')
+            const newIdFields = [
+                {
+                    label: 'Machine ID',
+                    type: 'textfield',
+                    hiddenField: true,
+                    generateId: true,
+                    targetColumn: { tablename: 'machines', column: 'machine_id' }
+                },
+                {
+                    label: 'Name',
+                    type: 'textfield',
+                    required: true,
+                    targetColumn: { tablename: 'machines', column: 'name' }
+                }
+            ]
+
             const data = {
                 ...defaultData,
                 ...(confirm ? { title: 'Delete press-1?' } : {}),
+                ...(newId ? { title: 'New machine', subTitle: '' } : {}),
                 buttonLabels: {
                     submitLabel: params.get('submit') ?? (confirm ? 'Delete' : undefined),
                     resetLabel: params.get('reset') ?? undefined,
                     cancelLabel: params.get('cancel') ?? (confirm ? 'Keep' : undefined)
                 },
-                formButton: params.has('dialog') || openKey !== null || confirm,
+                formButton: params.has('dialog') || openKey !== null || confirm || newId,
                 autoSubmit: params.has('auto'),
                 openParameter: openKey ?? undefined,
                 formButtonStyle: {
@@ -278,9 +300,11 @@
                 },
                 formFields: confirm
                     ? confirmFields
-                    : params.get('auto') === 'settings'
-                      ? settingsFields
-                      : formFields
+                    : newId
+                      ? newIdFields
+                      : params.get('auto') === 'settings'
+                        ? settingsFields
+                        : formFields
             }
 
             const tag = unsafeStatic(`widget-form-${packageJson.version}`)

@@ -63,6 +63,15 @@ There is deliberately no delete logic in the widget since 2.0.0: `deleteButton`,
 
 - **After a save** `afterSave()` is shared by the plain and the file path: Save on Change keeps the fields; otherwise, with a `submitNavigationRoute`, `nav-submit` carries it (minus the opening parameter) and `closeDialog({ navigated: true })`, without one `closeDialog()`. `resolveRoute()` takes a bound route that is a number and skips null variables.
 
+### Generate New ID
+
+`generateId` (shown only for a hidden field; `generatesId()` checks `hiddenField === true` too, since Studio does not evaluate the condition) makes a field save a new random UUID instead of its pre-filled or default value. It is how a "New" form keys an asset by an app-generated ID rather than a name users type (the agent-skills ironflock-templates rule: asset tables keyed by an id, the name a column, routes by id).
+
+- **When.** `handleFormSubmit()` makes the ID on the field's first save (`generatedIds`, by field index, plain field, not `@state`) and `resetForm()` clears it. A dialog form resets after each save, so each "New" is a new record; Save on Change does not reset, so it keeps writing the record it created; a failed file save keeps the ID, so the retry writes the same key.
+- **How.** `newId()`: `crypto.randomUUID()`, which exists only in secure contexts, else a v4 UUID from `crypto.getRandomValues()`, because an appliance's board may be served over plain http on the LAN.
+- Edit and delete forms keep the key with `preFilledValue`; the field is for creating only. `submitNavigationRoute` cannot use the new ID yet (`variables` are bound values).
+- Demo `?newid`.
+
 ### Open on URL parameter
 
 `openParameter` (shown with `formButton`; `openParameterKey()` also checks `formButton` in code, since Studio does not evaluate the condition) names a URL parameter that opens the dialog in place of the button: a widget-table `edit` column, or any link, sets it to a record's key, and the fields' `preFilledValue` bindings follow it through Studio's Parameter filter plus Latest (the documented edit form, on one page instead of a `*` page). The widget never reads `window.location`: `routeParameter()` parses the query of `route`.

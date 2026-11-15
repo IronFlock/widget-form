@@ -356,6 +356,22 @@ const fieldLayoutSettings = (layout: unknown): FieldLayoutSettings => {
     }
 }
 
+// A field that saves a new ID (Generate New ID). The setting only shows for
+// hidden fields; Studio does not evaluate the condition, so the code checks it.
+const generatesId = (field: Column): boolean => field.hiddenField === true && field.generateId === true
+
+// A random UUID (v4). crypto.randomUUID() exists only in secure contexts, and
+// an appliance's board may be served over plain http on the LAN, so build it
+// from getRandomValues(), which every context has, when it is missing.
+const newId = (): string => {
+    if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+    const bytes = crypto.getRandomValues(new Uint8Array(16))
+    bytes[6] = (bytes[6] & 0x0f) | 0x40
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 // A heading that groups the fields after it, rather than an input.
 const isSection = (field: unknown): boolean => (field as Column | null | undefined)?.type === 'section'
 
@@ -847,6 +863,12 @@ export class WidgetForm extends LitElement {
     // value resets the text field, and then the swatch follows it again.
     @state() private typedColors: Record<number, { text: string; over: unknown }> = {}
 
+    // The new ID each Generate New ID field saves, by field index: made on
+    // the first save and kept until the form resets, so a form that saves on
+    // change keeps writing the record it created, and a failed file save
+    // retries with the same key. Not state: nothing renders it.
+    private generatedIds: Record<number, string> = {}
+
     // The field index a file is being dragged over.
     @state() private dragTarget?: number
 
@@ -1153,6 +1175,12 @@ export class WidgetForm extends LitElement {
                     const urlRef = companionRef(field.fileUrlColumn)
                     if (urlRef) submitData.push({ ...urlRef, value: null })
                 }
+                return
+            }
+
+            if (generatesId(field)) {
+                this.generatedIds[i] ??= newId()
+                submitData.push({ ...targetColumn, value: this.generatedIds[i] })
                 return
             }
 
@@ -1913,6 +1941,7 @@ export class WidgetForm extends LitElement {
         this.fileErrors = {}
         this.revealedSecrets = {}
         this.typedColors = {}
+        this.generatedIds = {}
         this.submitError = ''
     }
 

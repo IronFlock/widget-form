@@ -107,6 +107,16 @@ interface ButtonLabels {
 
 The labels can be bound to a column; a numeric value is shown as it is. Submit takes the Highlight Color (`accentColor`). `submitNavigationRoute` opens a page after a save: `*` keeps the current page's segment at that position, and `{{label}}` takes a value from `variables`.
 
+### Creating Records
+
+A record that users create, such as an asset in a list's "New" form, is keyed by an ID the form makes, not by anything users type. Give the form a hidden field (`hiddenField: true`) with `generateId: true` on the entity table's key column (a string column, the one in `maintainLatestFlagFor`), and a field for the name in a column of its own:
+
+- The form makes a random UUID on the first save and keeps it until the form resets. A dialog resets after each save, so every "New" makes a new record; Save on Change keeps writing the record it created.
+- The field ignores `preFilledValue` and `defaultValue`.
+- Edit and delete forms leave `generateId` off and carry the record's key over in a hidden field with `preFilledValue`, so renaming a record changes only its name.
+
+Pages and links use the ID (`/machines/<machine_id>`), and lists show the name. The demo shows a "New" form with `?newid`.
+
 ### Deleting Records
 
 Records are soft-deleted: the table has a boolean `deleted` column, and a delete saves the record's key with `deleted` set to `true`. There is no Delete button; a delete form is a separate form whose Submit says "Delete":
@@ -193,6 +203,7 @@ interface FormField {
     newRow?: boolean // Start a new row even if the field would fit on the current one
     groupWidth?: FieldWidth // For a section: the width of its group's fields
     hiddenField?: boolean // Hide field but still submit value
+    generateId?: boolean // For a hidden field: save a new UUID (see Creating Records)
     required?: boolean // Field must be filled
     description?: string // Hint text shown below field
     targetColumn?: TargetColumn // Database column mapping
