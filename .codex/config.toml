@@ -3,7 +3,7 @@ project_doc_max_bytes = 163840
 
 [marketplaces.ironflock]
 source_type = "git"
-source = "https://github.com/IronFlock/agent-skills.git"
+source = "https://github.com/IronFlock/ai-plugins.git"
 
 [plugins."ironflock@ironflock"]
 enabled = true
