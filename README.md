@@ -36,6 +36,7 @@ npm i @ironflock/widget-form
 | ------------------ | ---------------------------------------- | ---------------------------------------------------------------- |
 | `data-submit`      | Array of field/value mappings            | Fired when the form is submitted                                 |
 | `file-data-submit` | `{ items, waitUntil }` (see File Fields) | Fired instead of `data-submit` when the save includes a new file |
+| `media-data-submit` | `{ items, waitUntil, progress }` (see Media Fields) | Fired instead of both when the save includes photos |
 | `nav-submit`       | `{ path }`                               | After a save, with the resolved `submitNavigationRoute`            |
 | `param-submit`     | `{ params: { [openParameter]: undefined } }` | When a dialog opened by a URL parameter closes (see Open on URL Parameter) |
 
@@ -189,6 +190,7 @@ Each form field supports the following types:
 | `dropdown`    | Select from predefined options |
 | `datetime`    | Date/time picker               |
 | `file`        | Upload one file (FleetFiles)   |
+| `media`       | Several photos, a row each     |
 | `secret`      | Masked password or token       |
 | `color`       | Color picker, stored as hex    |
 | `section`     | Heading over a group of fields |
@@ -282,6 +284,37 @@ detail: {
 ```
 
 The host claims the event by calling `waitUntil()` while it is dispatched. It uploads each `file` under a key of its choosing, puts the key in as that item's value, writes the object's permanent URL into the item's `urlColumn` (null where it cannot build one), and writes the rows only when every upload succeeded. A null item for the URL column comes ahead of the file item, and a later item for the same column wins: a host that writes no URL leaves the column empty instead of keeping another file's URL. The form shows "Saving…" until the promise settles. If it resolves, the form resets and the dialog closes. If it rejects, the form keeps its values and shows the error's message. A host that does not know the event (Studio before file support) never claims it, and the form says that it cannot upload and saves nothing, rather than sending a `File` through `data-submit`, which would write garbage into the column.
+
+### Media Fields
+
+A `media` field takes several photos in one save, taken with the phone's camera or picked from its library, a computer's file picker or a drop. Each photo is stored in the app's file storage (FleetFiles) and written as a row of its own into the table of the field's `targetColumn` (a photo table), whose column gets the stored key.
+
+- **Capture.** `cameraCapture` opens the rear camera at once on a phone (`capture="environment"`), one photo at a time; without it the phone offers its own choice of camera, library and files. A computer always shows its file picker.
+- **Review.** The photos show as thumbnails with a remove button, a bar while they are prepared or uploaded, and a mark once stored or when they failed. `maxPhotos` caps them; `required` asks for at least one.
+- **Resizing.** Every photo is turned upright and stored as a JPEG whose longer edge is at most `maxImageEdge` pixels (default 2048) at `imageQuality` (default 85), which keeps it under the 6 MB that uploads on every installation, appliances included. A photo the browser cannot decode (HEIC outside Safari) is stored as it is when it fits in one upload, otherwise it is marked not usable. `maxFileSizeMB` applies after resizing.
+- **The photo rows.** `mediaIdColumn` gets a new UUID per photo; make it the photo table's entity key, so a repeated save writes the same rows. `mediaLinkField` names another field of the form (by Label) whose value every photo row gets in `mediaLinkColumn`: in a form that creates a record, its hidden Generate New ID field. Any field whose target column is in the photo table goes into every photo row instead of a row of its own: in a form that only adds photos to an existing record, a hidden field pre-filled with that record's key. The name, size, type and URL columns work as for a file field, per photo.
+- **Time and position.** Before resizing, which drops all EXIF data, the field reads each photo's capture time and GPS position. A photo just taken (its capture time, else its file time, within two minutes) that carries no position gets the device's position instead, once the viewer allows it; this needs an https page, so not an appliance served over http. A photo from the library without GPS data gets none. `capturedAtColumn`, `latitudeColumn`, `longitudeColumn`, `altitudeColumn` and `positionSourceColumn` (`exif` or `device`) take them; with no position column set the form never reads or asks for a position.
+- A form with a media field keeps Reset and Submit even with Save on Change. A media field hidden by Conditional Display adds no rows.
+
+The widget never uploads anything itself. A save with photos dispatches `media-data-submit`:
+
+```ts
+detail: {
+    items: Array<
+        | { swarm_app_databackend_key, table_name, column_name, value, row?: number }
+        | {
+              swarm_app_databackend_key, table_name, column_name, row?: number,
+              id: string, file: File, namespace: string, contentType: string,
+              key?: string, // stored by an earlier attempt: write it, do not upload again
+              urlColumn?: { swarm_app_databackend_key, table_name, column_name }
+          }
+    >
+    waitUntil(outcome: Promise<unknown>): void
+    progress(id: string, state: 'uploading' | 'stored' | 'failed', key?: string): void
+}
+```
+
+`row` tells the rows of one table apart; an item without it is in the table's one row, as in `data-submit`. The host stores each file that has no `key`, reports it through `progress()` (the stored key with `stored`), puts the key in as the item's value and the URL into `urlColumn`, groups the items into rows by table and `row`, and writes the tables in the order their first item appears, stopping at the first that fails. The photo rows come first, so the form's own row is written last. If the outcome rejects, the form keeps everything, photos already stored keep their keys, and Submit retries with the same IDs. A Studio without the event never claims it, and the form says so and saves nothing. A save whose media fields hold no photos goes out as `data-submit` or `file-data-submit`, as without them.
 
 ### Color Fields
 

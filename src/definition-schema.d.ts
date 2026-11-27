@@ -114,7 +114,7 @@ export type Density = "comfortable" | "compact";
  */
 export type Label1 = string;
 /**
- * The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for a date and time, entered in the viewer's time zone and stored as a UTC timestamp (a pre-filled or default value is epoch milliseconds or ISO 8601; without an offset it is the viewer's local time), 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'color' for a color picked from the browser's color picker or typed (any CSS color, such as #1e88e5, rgb(30, 136, 229) or teal), stored in a string column as lowercase hex: #rrggbb, or #rrggbbaa when it is translucent (an empty field stores its default, else NULL), 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records. 'section' is a heading, not an input: it shows the Label and Hint Text across a full row and groups the fields after it up to the next section. Its Field Width in Group sets the width of those fields. It stores nothing, and its Conditional Display shows or hides the whole group (hidden fields store NULL).
+ * The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for a date and time, entered in the viewer's time zone and stored as a UTC timestamp (a pre-filled or default value is epoch milliseconds or ISO 8601; without an offset it is the viewer's local time), 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'media' for several photos per save (camera, library or file picker), each resized to a JPEG, stored in FleetFiles and written as a row of its own into the target column's table; a form with one keeps Submit even with Save on Change, 'color' for a color picked from the browser's color picker or typed (any CSS color, such as #1e88e5, rgb(30, 136, 229) or teal), stored in a string column as lowercase hex: #rrggbb, or #rrggbbaa when it is translucent (an empty field stores its default, else NULL), 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records. 'section' is a heading, not an input: it shows the Label and Hint Text across a full row and groups the fields after it up to the next section. Its Field Width in Group sets the width of those fields. It stores nothing, and its Conditional Display shows or hides the whole group (hidden fields store NULL).
  */
 export type FieldType =
     | "dropdown"
@@ -124,6 +124,7 @@ export type FieldType =
     | "textarea"
     | "datetime"
     | "file"
+    | "media"
     | "secret"
     | "color"
     | "section";
@@ -148,7 +149,7 @@ export type HiddenField = boolean;
  */
 export type GenerateNewID = boolean;
 /**
- * When enabled, users must fill out this field before the form can be submitted. The form will show a validation error if left empty. Ignored when a default value is provided.
+ * When enabled, users must fill out this field before the form can be submitted. The form will show a validation error if left empty. Ignored when a default value is provided. For a media field: at least one photo.
  */
 export type Required = boolean;
 /**
@@ -208,17 +209,37 @@ export type DropdownValues = {
     [k: string]: unknown;
 }[];
 /**
- * Required for a file field: the FleetFiles namespace the file is stored in, one of the namespaces in the files section of the data template of the app that owns the target table ('default' when that app declares none). The namespace's accepted content types and maximum object size also apply. The target column (a string column) receives the stored file's key within this namespace.
+ * Required for a file or media field: the FleetFiles namespace the file is stored in, one of the namespaces in the files section of the data template of the app that owns the target table ('default' when that app declares none). The namespace's accepted content types and maximum object size also apply; a media field's must take image/jpeg. The target column (a string column) receives the stored file's key within this namespace.
  */
 export type FileNamespace = string;
 /**
- * Comma-separated MIME types the field accepts, such as 'application/pdf' or 'image/*, application/pdf'. The file picker offers only these, and the form refuses any other file before uploading it. Keep them within the namespace's content types. Leave empty to accept any file the namespace allows.
+ * Comma-separated MIME types the field accepts, such as 'application/pdf' or 'image/*, application/pdf'. The file picker offers only these, and the form refuses any other file before uploading it. Keep them within the namespace's content types. Leave empty to accept any file the namespace allows. A media field takes image types only (image/* when empty).
  */
 export type AcceptedFileTypes = string;
 /**
- * Largest file the field accepts, in MB (1 MB = 1,048,576 bytes); the form refuses a larger file before uploading it. Leave empty for the namespace's limit (100 MB unless the data template sets maxObjectBytes). Files up to 6 MB upload everywhere. Larger ones need cloud storage that issues upload links, which an on-premises appliance does not by default, so keep 6 MB or less for a board that runs on an appliance.
+ * Largest file the field accepts, in MB (1 MB = 1,048,576 bytes); the form refuses a larger file before uploading it. Leave empty for the namespace's limit (100 MB unless the data template sets maxObjectBytes). Files up to 6 MB upload everywhere. Larger ones need cloud storage that issues upload links, which an on-premises appliance does not by default, so keep 6 MB or less for a board that runs on an appliance. For a media field, per photo after resizing.
  */
 export type MaximumFileSizeMB = number;
+/**
+ * For a media field: the Label of the field whose value every photo row gets in the Link Column, such as a hidden Generate New ID field. Fields that target the photo table itself go into every photo row.
+ */
+export type LinkFromField = string;
+/**
+ * For a media field: on a phone, open the rear camera at once instead of the phone's choice of camera, library and files.
+ */
+export type OpenTheCameraDirectly = boolean;
+/**
+ * For a media field: the most photos one save takes; empty for no limit.
+ */
+export type MaximumPhotos = number;
+/**
+ * For a media field: the longest side of a stored photo in px (default 2048); smaller ones are not enlarged.
+ */
+export type LongestEdgePx = number;
+/**
+ * For a media field: the JPEG quality, 1 to 100 (default 85).
+ */
+export type JPEGQuality = number;
 /**
  * The Label of another input field (not a section) in this form that controls whether this field is shown. Leave empty to always show this field. The match is against the other field's current value (for dropdowns, the option's stored value).
  */
@@ -262,12 +283,24 @@ export type FormFields = {
     fileSizeColumn?: FileSizeColumn;
     fileTypeColumn?: FileTypeColumn;
     fileUrlColumn?: FileURLColumn;
+    mediaIdColumn?: PhotoIDColumn;
+    mediaLinkField?: LinkFromField;
+    mediaLinkColumn?: LinkColumn;
+    cameraCapture?: OpenTheCameraDirectly;
+    maxPhotos?: MaximumPhotos;
+    maxImageEdge?: LongestEdgePx;
+    imageQuality?: JPEGQuality;
+    capturedAtColumn?: CaptureTimeColumn;
+    latitudeColumn?: LatitudeColumn;
+    longitudeColumn?: LongitudeColumn;
+    altitudeColumn?: AltitudeColumn;
+    positionSourceColumn?: PositionSourceColumn;
     conditionalDisplay?: ConditionalDisplay;
     [k: string]: unknown;
 }[];
 
 /**
- * A form that stores what people enter as a row in a table, shown in the tile or in a dialog opened by a button. Fields: text, number, dropdown, checkbox, textarea, date and time, colour, masked secret and file upload, each written to one column.
+ * A form that stores what people enter as a row in a table, shown in the tile or in a dialog opened by a button. Fields: text, number, dropdown, checkbox, textarea, date and time, colour, masked secret and file upload, each written to one column, and photos, each a row of a photo table.
  */
 export interface FormConfiguration {
     title?: Title;
@@ -346,7 +379,7 @@ export interface FieldLayout {
     [k: string]: unknown;
 }
 /**
- * The database table and column where this field's value will be stored on form submission. Select from available tables and columns. All fields targeting the same table will be combined into a single row insert.
+ * The database table and column where this field's value will be stored on form submission. Select from available tables and columns. All fields targeting the same table will be combined into a single row insert. For a media field: the photo table's string column for each photo's key.
  */
 export interface TargetColumn {
     [k: string]: unknown;
@@ -397,6 +430,48 @@ export interface FileTypeColumn {
  * Optional: a string column, in the same table as the target column, that receives the stored file's permanent platform URL, so that other widgets can show or link the file, such as an embed of a PDF or an image. Opening it needs a signed-in IronFlock session. Written only when a new file is uploaded; it stays empty where the installation serves no file links, and with a Studio version that does not write it.
  */
 export interface FileURLColumn {
+    [k: string]: unknown;
+}
+/**
+ * For a media field: a string column of the photo table that gets a new UUID per photo. Make it the photo table's entity key, so a retried save rewrites the same rows.
+ */
+export interface PhotoIDColumn {
+    [k: string]: unknown;
+}
+/**
+ * For a media field: the photo table's column that gets the Link From Field's value.
+ */
+export interface LinkColumn {
+    [k: string]: unknown;
+}
+/**
+ * For a media field: a timestamp column for when the photo was taken.
+ */
+export interface CaptureTimeColumn {
+    [k: string]: unknown;
+}
+/**
+ * For a media field: a numeric column for the latitude in decimal degrees, from the photo's GPS data, else the device's position for a photo just taken (https boards only, if the viewer allows it). Positions are read only when a position column is set.
+ */
+export interface LatitudeColumn {
+    [k: string]: unknown;
+}
+/**
+ * For a media field: a numeric column for the longitude, like the latitude.
+ */
+export interface LongitudeColumn {
+    [k: string]: unknown;
+}
+/**
+ * For a media field: a numeric column for the altitude in metres, when known.
+ */
+export interface AltitudeColumn {
+    [k: string]: unknown;
+}
+/**
+ * For a media field: a string column for where the position came from: 'exif' or 'device'.
+ */
+export interface PositionSourceColumn {
     [k: string]: unknown;
 }
 /**

@@ -99,7 +99,15 @@
             // deleted = true from two hidden fields),
             // ?newid (an asset's "New" form: a name, and a hidden key field
             // with Generate New ID, so every save logs a new machine_id),
-            // ?submit=<label> / ?reset=<label> / ?cancel=<label> (Button Labels).
+            // ?submit=<label> / ?reset=<label> / ?cancel=<label> (Button Labels),
+            // ?photos (a report form with several photos, each a row of
+            // report_photos linked to the report's generated ID, with capture
+            // time and position; ?photos=camera opens the camera directly),
+            // ?evidence (a form that only adds photos to the case a hidden,
+            // pre-filled case_id names: it goes into every photo row).
+            // The stand-in host for media-data-submit reports each photo's
+            // progress, refuses a photo whose name contains "fail" after the
+            // others are stored, and logs the rows it would write.
             const params = new URLSearchParams(location.search)
             const openKey = params.get('open')
             const themes = { light, chalk, vintage }
@@ -270,16 +278,76 @@
                 }
             ]
 
+            // ?photos: a report with photos. The hidden report_id is made on
+            // save and links every photo row; each photo also gets its own ID.
+            const photos = params.has('photos')
+            const photoField = {
+                label: 'Photos',
+                type: 'media',
+                required: true,
+                description: 'Up to 5 photos, made at most 2048 px; a name containing "fail" is refused by the demo host',
+                targetColumn: { tablename: 'report_photos', column: 'file_key' },
+                fileNamespace: 'photos',
+                maxPhotos: 5,
+                cameraCapture: params.get('photos') === 'camera',
+                mediaIdColumn: { tablename: 'report_photos', column: 'photo_id' },
+                fileNameColumn: { tablename: 'report_photos', column: 'file_name' },
+                fileSizeColumn: { tablename: 'report_photos', column: 'size_bytes' },
+                fileTypeColumn: { tablename: 'report_photos', column: 'content_type' },
+                fileUrlColumn: { tablename: 'report_photos', column: 'file_url' },
+                capturedAtColumn: { tablename: 'report_photos', column: 'captured_at' },
+                latitudeColumn: { tablename: 'report_photos', column: 'latitude' },
+                longitudeColumn: { tablename: 'report_photos', column: 'longitude' },
+                altitudeColumn: { tablename: 'report_photos', column: 'altitude' },
+                positionSourceColumn: { tablename: 'report_photos', column: 'position_source' }
+            }
+            const photoFields = [
+                {
+                    label: 'Report ID',
+                    type: 'textfield',
+                    hiddenField: true,
+                    generateId: true,
+                    targetColumn: { tablename: 'reports', column: 'report_id' }
+                },
+                {
+                    label: 'What happened',
+                    type: 'textarea',
+                    required: true,
+                    targetColumn: { tablename: 'reports', column: 'description' }
+                },
+                {
+                    ...photoField,
+                    mediaLinkField: 'Report ID',
+                    mediaLinkColumn: { tablename: 'report_photos', column: 'report_id' }
+                }
+            ]
+
+            // ?evidence: photos added to an existing case. case_id targets the
+            // photo table, so it goes into every photo row, not a row of its own.
+            const evidence = params.has('evidence')
+            const evidenceFields = [
+                {
+                    label: 'Case',
+                    type: 'textfield',
+                    hiddenField: true,
+                    preFilledValue: 'case-0042',
+                    targetColumn: { tablename: 'report_photos', column: 'case_id' }
+                },
+                { ...photoField, label: 'More photos', required: true }
+            ]
+
             const data = {
                 ...defaultData,
                 ...(confirm ? { title: 'Delete press-1?' } : {}),
                 ...(newId ? { title: 'New machine', subTitle: '' } : {}),
+                ...(photos ? { title: 'Report an event', subTitle: '' } : {}),
+                ...(evidence ? { title: 'Add evidence to case-0042', subTitle: '' } : {}),
                 buttonLabels: {
                     submitLabel: params.get('submit') ?? (confirm ? 'Delete' : undefined),
                     resetLabel: params.get('reset') ?? undefined,
                     cancelLabel: params.get('cancel') ?? (confirm ? 'Keep' : undefined)
                 },
-                formButton: params.has('dialog') || openKey !== null || confirm || newId,
+                formButton: params.has('dialog') || openKey !== null || confirm || newId || evidence,
                 autoSubmit: params.has('auto'),
                 openParameter: openKey ?? undefined,
                 formButtonStyle: {
@@ -300,6 +368,10 @@
                 },
                 formFields: confirm
                     ? confirmFields
+                    : photos
+                      ? photoFields
+                    : evidence
+                      ? evidenceFields
                     : newId
                       ? newIdFields
                       : params.get('auto') === 'settings'
@@ -356,6 +428,48 @@
                                 else resolve()
                             }, 1500)
                         )
+                    )
+                })
+            }
+
+            if (!params.has('oldhost')) {
+                widget.addEventListener('media-data-submit', (event) => {
+                    const { items, waitUntil, progress } = event.detail
+                    console.log('media-data-submit', items)
+                    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+                    waitUntil(
+                        (async () => {
+                            const values = []
+                            for (const item of items) {
+                                if (!item.file) {
+                                    values.push(item)
+                                    continue
+                                }
+                                let key = item.key
+                                if (!key) {
+                                    progress(item.id, 'uploading')
+                                    await wait(700)
+                                    if (item.file.name.includes('fail')) {
+                                        progress(item.id, 'failed')
+                                        throw new Error(`The demo host refused “${item.file.name}”. Nothing was saved.`)
+                                    }
+                                    key = `2026-11-27/${Math.random().toString(36).slice(2, 12)}/${item.file.name}`
+                                }
+                                progress(item.id, 'stored', key)
+                                values.push({ ...item, file: undefined, value: key })
+                                if (item.urlColumn)
+                                    values.push({ ...item.urlColumn, row: item.row, value: `https://files.example.com/f/1/${item.namespace}/${key}` })
+                            }
+                            // Rows by table and row, in the order they appear.
+                            const rows = new Map()
+                            for (const { table_name, row, column_name, value } of values) {
+                                const id = `${table_name}#${row ?? ''}`
+                                if (!rows.has(id)) rows.set(id, { table: table_name, row, columns: {} })
+                                rows.get(id).columns[column_name] = value
+                            }
+                            for (const { table, row, columns } of rows.values())
+                                console.log(`would write ${table}${row === undefined ? '' : ` row ${row}`}`, columns)
+                        })()
                     )
                 })
             }

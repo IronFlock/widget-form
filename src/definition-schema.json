@@ -1,6 +1,6 @@
 {
     "title": "Form Configuration",
-    "description": "A form that stores what people enter as a row in a table, shown in the tile or in a dialog opened by a button. Fields: text, number, dropdown, checkbox, textarea, date and time, colour, masked secret and file upload, each written to one column.",
+    "description": "A form that stores what people enter as a row in a table, shown in the tile or in a dialog opened by a button. Fields: text, number, dropdown, checkbox, textarea, date and time, colour, masked secret and file upload, each written to one column, and photos, each a row of a photo table.",
     "aiSelection": {
         "dataShape": "Writes rather than reads: each formFields[] entry maps one input to a table column (targetColumn), and a save stores one row. Entries of type section head groups of fields, and width puts fields side by side.",
         "useWhen": [
@@ -8,6 +8,7 @@
             "Data a person enters or corrects — manual readings, maintenance notes, quality checks, configuration values — with validation, defaults or fields shown only for some answers (conditionalDisplay).",
             "Settings that apply as soon as they change, with no Submit button: autoSubmit on a form shown in the tile.",
             "A record with a file such as a PDF (type 'file'), or a password or token (type 'secret', into a 'secret: true' column).",
+            "Several photos taken on a phone as evidence (type 'media'): each a row of a photo table linked to the record, optionally with where and when it was taken.",
             "Editing the record a table's 'edit' column picked: openParameter 'edit', and preFilledValue bound to the latest row filtered by it.",
             "A long form as a compact sheet: fields side by side (width), headed groups (type section), fieldLayout.density compact.",
             "Deleting a record (soft delete), with a confirmation dialog: a separate form with Submit labelled 'Delete' (buttonLabels) that writes the record's key and deleted = true from hidden fields."
@@ -310,8 +311,8 @@
                     },
                     "type": {
                         "title": "Field Type",
-                        "description": "The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for a date and time, entered in the viewer's time zone and stored as a UTC timestamp (a pre-filled or default value is epoch milliseconds or ISO 8601; without an offset it is the viewer's local time), 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'color' for a color picked from the browser's color picker or typed (any CSS color, such as #1e88e5, rgb(30, 136, 229) or teal), stored in a string column as lowercase hex: #rrggbb, or #rrggbbaa when it is translucent (an empty field stores its default, else NULL), 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records. 'section' is a heading, not an input: it shows the Label and Hint Text across a full row and groups the fields after it up to the next section. Its Field Width in Group sets the width of those fields. It stores nothing, and its Conditional Display shows or hides the whole group (hidden fields store NULL).",
-                        "enum": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", "section"],
+                        "description": "The input control type: 'dropdown' for selection from predefined options, 'textfield' for single-line text, 'numberfield' for numeric values, 'checkbox' for boolean yes/no, 'textarea' for multi-line text, 'datetime' for a date and time, entered in the viewer's time zone and stored as a UTC timestamp (a pre-filled or default value is epoch milliseconds or ISO 8601; without an offset it is the viewer's local time), 'file' for uploading one file into the app's file storage (FleetFiles), whose key is stored in the target column, 'media' for several photos per save (camera, library or file picker), each resized to a JPEG, stored in FleetFiles and written as a row of its own into the target column's table; a form with one keeps Submit even with Save on Change, 'color' for a color picked from the browser's color picker or typed (any CSS color, such as #1e88e5, rgb(30, 136, 229) or teal), stored in a string column as lowercase hex: #rrggbb, or #rrggbbaa when it is translucent (an empty field stores its default, else NULL), 'secret' for a password, token or key that is masked while it is typed (a button shows it). A secret field always starts empty and has no pre-filled value: a saved secret is never shown again. Left empty, it leaves its column out of the save, so a table that keeps the latest row per entity (maintainLatestFlagFor) keeps the stored secret and any other table stores NULL. Point it at a string column declared 'secret: true' in the data template, which FleetDB encrypts and never returns to a board; any other column stores the value as plain text. Required means a new value must be typed on every save, so leave it off in a form that edits existing records. 'section' is a heading, not an input: it shows the Label and Hint Text across a full row and groups the fields after it up to the next section. Its Field Width in Group sets the width of those fields. It stores nothing, and its Conditional Display shows or hides the whole group (hidden fields store NULL).",
+                        "enum": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "media", "secret", "color", "section"],
                         "type": "string",
                         "dataDrivenDisabled": true,
                         "order": 2
@@ -325,7 +326,7 @@
                         "dataDrivenDisabled": true,
                         "condition": {
                             "relativePath": "../type",
-                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", false]
+                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "media", "secret", "color", false]
                         },
                         "order": 2.5
                     },
@@ -336,7 +337,7 @@
                         "dataDrivenDisabled": true,
                         "condition": {
                             "relativePath": "../type",
-                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", false]
+                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "media", "secret", "color", false]
                         },
                         "order": 2.6
                     },
@@ -378,11 +379,11 @@
                     "required": {
                         "title": "Required",
                         "type": "boolean",
-                        "description": "When enabled, users must fill out this field before the form can be submitted. The form will show a validation error if left empty. Ignored when a default value is provided.",
+                        "description": "When enabled, users must fill out this field before the form can be submitted. The form will show a validation error if left empty. Ignored when a default value is provided. For a media field: at least one photo.",
                         "dataDrivenDisabled": true,
                         "condition": {
                             "relativePath": "../type",
-                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", false]
+                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "media", "secret", "color", false]
                         },
                         "order": 4
                     },
@@ -396,12 +397,12 @@
                     "targetColumn": {
                         "title": "Target Column",
                         "type": "targetColumn",
-                        "description": "The database table and column where this field's value will be stored on form submission. Select from available tables and columns. All fields targeting the same table will be combined into a single row insert.",
+                        "description": "The database table and column where this field's value will be stored on form submission. Select from available tables and columns. All fields targeting the same table will be combined into a single row insert. For a media field: the photo table's string column for each photo's key.",
                         "dataDrivenDisabled": true,
                         "required": true,
                         "condition": {
                             "relativePath": "../type",
-                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "secret", "color", false]
+                            "showIfValueIn": ["dropdown", "textfield", "numberfield", "checkbox", "textarea", "datetime", "file", "media", "secret", "color", false]
                         },
                         "order": 6
                     },
@@ -572,36 +573,36 @@
                     "fileNamespace": {
                         "title": "File Namespace",
                         "type": "string",
-                        "description": "Required for a file field: the FleetFiles namespace the file is stored in, one of the namespaces in the files section of the data template of the app that owns the target table ('default' when that app declares none). The namespace's accepted content types and maximum object size also apply. The target column (a string column) receives the stored file's key within this namespace.",
+                        "description": "Required for a file or media field: the FleetFiles namespace the file is stored in, one of the namespaces in the files section of the data template of the app that owns the target table ('default' when that app declares none). The namespace's accepted content types and maximum object size also apply; a media field's must take image/jpeg. The target column (a string column) receives the stored file's key within this namespace.",
                         "dataDrivenDisabled": true,
                         "pattern": "^[a-z][a-z0-9-]{1,62}$",
                         "condition": {
                             "relativePath": "../type",
-                            "showIfValueIn": ["file"]
+                            "showIfValueIn": ["file", "media"]
                         },
                         "order": 13
                     },
                     "acceptedFileTypes": {
                         "title": "Accepted File Types",
                         "type": "string",
-                        "description": "Comma-separated MIME types the field accepts, such as 'application/pdf' or 'image/*, application/pdf'. The file picker offers only these, and the form refuses any other file before uploading it. Keep them within the namespace's content types. Leave empty to accept any file the namespace allows.",
+                        "description": "Comma-separated MIME types the field accepts, such as 'application/pdf' or 'image/*, application/pdf'. The file picker offers only these, and the form refuses any other file before uploading it. Keep them within the namespace's content types. Leave empty to accept any file the namespace allows. A media field takes image types only (image/* when empty).",
                         "dataDrivenDisabled": true,
                         "pattern": "^[ \\t]*(?:[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/(?:\\*|[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*)(?:[ \\t]*,[ \\t]*[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/(?:\\*|[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*))*)?[ \\t]*$",
                         "condition": {
                             "relativePath": "../type",
-                            "showIfValueIn": ["file"]
+                            "showIfValueIn": ["file", "media"]
                         },
                         "order": 14
                     },
                     "maxFileSizeMB": {
                         "title": "Maximum File Size (MB)",
                         "type": "number",
-                        "description": "Largest file the field accepts, in MB (1 MB = 1,048,576 bytes); the form refuses a larger file before uploading it. Leave empty for the namespace's limit (100 MB unless the data template sets maxObjectBytes). Files up to 6 MB upload everywhere. Larger ones need cloud storage that issues upload links, which an on-premises appliance does not by default, so keep 6 MB or less for a board that runs on an appliance.",
+                        "description": "Largest file the field accepts, in MB (1 MB = 1,048,576 bytes); the form refuses a larger file before uploading it. Leave empty for the namespace's limit (100 MB unless the data template sets maxObjectBytes). Files up to 6 MB upload everywhere. Larger ones need cloud storage that issues upload links, which an on-premises appliance does not by default, so keep 6 MB or less for a board that runs on an appliance. For a media field, per photo after resizing.",
                         "dataDrivenDisabled": true,
                         "minimum": 0,
                         "condition": {
                             "relativePath": "../type",
-                            "showIfValueIn": ["file"]
+                            "showIfValueIn": ["file", "media"]
                         },
                         "order": 15
                     },
@@ -612,7 +613,7 @@
                         "dataDrivenDisabled": true,
                         "condition": {
                             "relativePath": "../type",
-                            "showIfValueIn": ["file"]
+                            "showIfValueIn": ["file", "media"]
                         },
                         "order": 16
                     },
@@ -623,7 +624,7 @@
                         "dataDrivenDisabled": true,
                         "condition": {
                             "relativePath": "../type",
-                            "showIfValueIn": ["file"]
+                            "showIfValueIn": ["file", "media"]
                         },
                         "order": 17
                     },
@@ -634,7 +635,7 @@
                         "dataDrivenDisabled": true,
                         "condition": {
                             "relativePath": "../type",
-                            "showIfValueIn": ["file"]
+                            "showIfValueIn": ["file", "media"]
                         },
                         "order": 18
                     },
@@ -645,9 +646,145 @@
                         "dataDrivenDisabled": true,
                         "condition": {
                             "relativePath": "../type",
-                            "showIfValueIn": ["file"]
+                            "showIfValueIn": ["file", "media"]
                         },
                         "order": 19
+                    },
+                    "mediaIdColumn": {
+                        "title": "Photo ID Column",
+                        "type": "targetColumn",
+                        "description": "For a media field: a string column of the photo table that gets a new UUID per photo. Make it the photo table's entity key, so a retried save rewrites the same rows.",
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.1
+                    },
+                    "mediaLinkField": {
+                        "title": "Link From Field",
+                        "type": "string",
+                        "description": "For a media field: the Label of the field whose value every photo row gets in the Link Column, such as a hidden Generate New ID field. Fields that target the photo table itself go into every photo row.",
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.2
+                    },
+                    "mediaLinkColumn": {
+                        "title": "Link Column",
+                        "type": "targetColumn",
+                        "description": "For a media field: the photo table's column that gets the Link From Field's value.",
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.3
+                    },
+                    "cameraCapture": {
+                        "title": "Open the Camera Directly",
+                        "type": "boolean",
+                        "description": "For a media field: on a phone, open the rear camera at once instead of the phone's choice of camera, library and files.",
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.4
+                    },
+                    "maxPhotos": {
+                        "title": "Maximum Photos",
+                        "type": "number",
+                        "description": "For a media field: the most photos one save takes; empty for no limit.",
+                        "dataDrivenDisabled": true,
+                        "minimum": 1,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.5
+                    },
+                    "maxImageEdge": {
+                        "title": "Longest Edge (px)",
+                        "type": "number",
+                        "description": "For a media field: the longest side of a stored photo in px (default 2048); smaller ones are not enlarged.",
+                        "dataDrivenDisabled": true,
+                        "minimum": 320,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.6
+                    },
+                    "imageQuality": {
+                        "title": "JPEG Quality",
+                        "type": "number",
+                        "description": "For a media field: the JPEG quality, 1 to 100 (default 85).",
+                        "dataDrivenDisabled": true,
+                        "minimum": 1,
+                        "maximum": 100,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.7
+                    },
+                    "capturedAtColumn": {
+                        "title": "Capture Time Column",
+                        "type": "targetColumn",
+                        "description": "For a media field: a timestamp column for when the photo was taken.",
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.8
+                    },
+                    "latitudeColumn": {
+                        "title": "Latitude Column",
+                        "type": "targetColumn",
+                        "description": "For a media field: a numeric column for the latitude in decimal degrees, from the photo's GPS data, else the device's position for a photo just taken (https boards only, if the viewer allows it). Positions are read only when a position column is set.",
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.9
+                    },
+                    "longitudeColumn": {
+                        "title": "Longitude Column",
+                        "type": "targetColumn",
+                        "description": "For a media field: a numeric column for the longitude, like the latitude.",
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.91
+                    },
+                    "altitudeColumn": {
+                        "title": "Altitude Column",
+                        "type": "targetColumn",
+                        "description": "For a media field: a numeric column for the altitude in metres, when known.",
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.92
+                    },
+                    "positionSourceColumn": {
+                        "title": "Position Source Column",
+                        "type": "targetColumn",
+                        "description": "For a media field: a string column for where the position came from: 'exif' or 'device'.",
+                        "dataDrivenDisabled": true,
+                        "condition": {
+                            "relativePath": "../type",
+                            "showIfValueIn": ["media"]
+                        },
+                        "order": 19.93
                     },
                     "conditionalDisplay": {
                         "title": "Conditional Display",
