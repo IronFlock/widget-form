@@ -17,7 +17,8 @@
             "Sending a command to a device — use widget-switch, or widget-scada for an industrial symbol.",
             "A single on/off setting stored per record — use widget-switch with targetColumn.",
             "Showing stored records — use widget-table.",
-            "A button that only navigates — use widget-navbutton."
+            "A button that only navigates — use widget-navbutton.",
+            "One-click writes with no fields to fill in — Start/Stop, a mode, a set point — use widget-toolbar."
         ]
     },
     "type": "object",
