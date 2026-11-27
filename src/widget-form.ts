@@ -5,6 +5,7 @@ import { ifDefined } from 'lit/directives/if-defined.js'
 import { ref } from 'lit/directives/ref.js'
 import { property, state, customElement, query } from 'lit/decorators.js'
 import { FormConfiguration } from './definition-schema.js'
+import { devicePosition, jpegName, readPhotoFacts, toJpeg, type Position } from './media.js'
 
 import '@material/web/fab/fab.js'
 import '@material/web/icon/icon.js'
@@ -36,8 +37,10 @@ type TargetRef = {
     column_name?: unknown
 }
 
-// A column value, as data-submit carries it.
-type ValueItem = TargetRef & { value: unknown }
+// A column value, as data-submit carries it. row (media-data-submit only)
+// says which row of its table the value is in; without it the value is in
+// the table's one row, as in data-submit.
+type ValueItem = TargetRef & { value: unknown; row?: number }
 
 // The md-outlined-text-field of a colour field, as its handlers use it.
 type ColorTextField = HTMLElement & { value: string; setCustomValidity: (message: string) => void }
@@ -60,6 +63,63 @@ export type FileDataSubmitDetail = {
 }
 
 const FILE_DATA_SUBMIT = 'file-data-submit'
+
+// A file of a save with photos: a FileItem with the photo's id, which the
+// host reports progress by, its row in the photo table, and the key an
+// earlier attempt stored it under, so a retry does not upload it again.
+type MediaFileItem = FileItem & { id: string; row?: number; key?: string }
+
+export type PhotoUploadState = 'uploading' | 'stored' | 'failed'
+
+// The detail of media-data-submit, the event of a save with a media field
+// (docs/media-capture.md, "Contract as built"). As file-data-submit, plus:
+// items carry a row, so one table can get several rows (one per photo); the
+// host writes the tables in the order their first item appears, a table
+// with several rows in one bulk insert, and stops at the first that fails;
+// and progress() reports each file by its id, a stored one with its key. A
+// new event rather than more of file-data-submit: a Studio that knows only
+// that one would merge all photo rows into one.
+export type MediaDataSubmitDetail = {
+    items: (ValueItem | MediaFileItem)[]
+    waitUntil: (outcome: Promise<unknown>) => void
+    progress: (id: string, state: PhotoUploadState, key?: string) => void
+}
+
+const MEDIA_DATA_SUBMIT = 'media-data-submit'
+
+// A photo a media field holds until the save. ready settles once it is
+// resized and its time and position are known.
+type Photo = {
+    id: string
+    original: File
+    // What is stored: the resized JPEG, or the original where the browser
+    // cannot decode it but it fits as it is.
+    file?: File
+    contentType?: string
+    // An object URL of the stored file for the thumbnail; revoked when the
+    // photo goes.
+    preview?: string
+    error?: string
+    capturedAt?: Date
+    position?: Position & { source: 'exif' | 'device' }
+    ready: Promise<void>
+    upload?: PhotoUploadState
+    // The key a failed save stored it under already.
+    key?: string
+}
+
+// What the host can take in one call on every installation (FleetFiles'
+// inline limit); a photo the browser cannot resize is only kept as it is
+// when it fits.
+const INLINE_MAX_BYTES = 6 * 1024 * 1024
+
+// A photo whose capture time (else its file time) lies this close to the
+// moment it was added was just taken: then the device's position is where
+// it was taken.
+const FRESH_PHOTO_MS = 2 * 60_000
+
+const DEFAULT_IMAGE_EDGE = 2048
+const DEFAULT_IMAGE_QUALITY = 85
 
 // MIB is how the Maximum File Size setting counts a megabyte.
 const MIB = 1024 * 1024
@@ -168,6 +228,36 @@ const companionRef = (target: any): TargetRef | undefined =>
               column_name: target.column
           }
         : undefined
+
+// A positive number setting, which a bound column may hold as text, or the
+// fallback.
+const positiveSetting = (value: unknown, fallback: number): number => {
+    const n = typeof value === 'string' && value.trim() ? Number(value) : value
+    return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : fallback
+}
+
+// A media field's settings with their defaults. Only image types count: the
+// field stores photos, and image/* when none is set.
+const mediaSettings = (field: Column) => {
+    const accepted = acceptedTypes(field.acceptedFileTypes).filter((type) => type.startsWith('image/'))
+    const maxPhotos = positiveSetting(field.maxPhotos, Infinity)
+    const position = [
+        field.latitudeColumn,
+        field.longitudeColumn,
+        field.altitudeColumn,
+        field.positionSourceColumn
+    ]
+    return {
+        namespace: typeof field.fileNamespace === 'string' ? field.fileNamespace.trim() : '',
+        accepted: accepted.length ? accepted : ['image/*'],
+        maxBytes: maxFileBytes(field),
+        maxPhotos: Number.isFinite(maxPhotos) ? Math.max(1, Math.floor(maxPhotos)) : Infinity,
+        maxEdge: Math.max(320, Math.round(positiveSetting(field.maxImageEdge, DEFAULT_IMAGE_EDGE))),
+        quality: Math.min(100, positiveSetting(field.imageQuality, DEFAULT_IMAGE_QUALITY)) / 100,
+        capture: field.cameraCapture === true,
+        wantsPosition: position.some((target) => !!companionRef(target))
+    }
+}
 
 // The HTML `pattern` attribute is compiled with the RegExp `v` flag, which
 // reserves these characters inside a character class: they have to be escaped
@@ -370,6 +460,11 @@ const newId = (): string => {
     bytes[8] = (bytes[8] & 0x3f) | 0x80
     const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+// Let go of the thumbnails of photos that leave the form.
+const releasePhotos = (photos: Photo[]) => {
+    for (const photo of photos) if (photo.preview) URL.revokeObjectURL(photo.preview)
 }
 
 // A heading that groups the fields after it, rather than an input.
@@ -855,6 +950,11 @@ export class WidgetForm extends LitElement {
     // Why a file field refused the file it was given, by field index.
     @state() private fileErrors: Record<number, string> = {}
 
+    // The photos each media field holds, by field index, in the order they
+    // were added, until they are saved or the form is reset. A failed save
+    // keeps them, with the keys of those the host stored already.
+    @state() private mediaPhotos: Record<number, Photo[]> = {}
+
     // The secret fields whose value is shown in clear text, by field index.
     @state() private revealedSecrets: Record<number, boolean> = {}
 
@@ -926,6 +1026,11 @@ export class WidgetForm extends LitElement {
         // its fresh input does not hold.
         this.chosenFiles = this.withoutHidden(this.chosenFiles, 'file')
         this.typedColors = this.withoutHidden(this.typedColors, 'color')
+        const photos = this.withoutHidden(this.mediaPhotos, 'media')
+        if (photos !== this.mediaPhotos) {
+            for (const [i, list] of Object.entries(this.mediaPhotos)) if (!(i in photos)) releasePhotos(list)
+            this.mediaPhotos = photos
+        }
     }
 
     // A per-field record without the fields that are no longer of the type or
@@ -1154,9 +1259,18 @@ export class WidgetForm extends LitElement {
         const form = event.target as HTMLFormElement
         const formData = new FormData(form)
         const submitData: (ValueItem | FileItem)[] = []
+        const mediaFields: number[] = []
         this.inputData?.formFields?.forEach((field, i) => {
             // A section is a heading: it has no column and writes nothing.
             if (!field || isSection(field)) return
+
+            // Photos become rows of their own table, built once every other
+            // field is (the link may be a generated ID made below). A hidden
+            // media field holds no photos and adds no rows.
+            if (field.type === 'media') {
+                if (!field.hiddenField && this.isFieldVisible(field, i)) mediaFields.push(i)
+                return
+            }
             const targetColumn = {
                 swarm_app_databackend_key: field.targetColumn?.swarm_app_databackend_key,
                 table_name: field.targetColumn?.tablename,
@@ -1201,6 +1315,15 @@ export class WidgetForm extends LitElement {
             }
             submitData.push({ ...targetColumn, value: this.formatValue(rawValue, field.type ?? 'textfield') })
         })
+
+        // The photos are prepared and uploaded first, so the dialog stays open
+        // as for a file (md-dialog closes on any method="dialog" submit that
+        // reaches it, preventDefault or not).
+        if (mediaFields.length) {
+            event.stopPropagation()
+            this.submitWithMedia(submitData, mediaFields)
+            return
+        }
 
         // A form that saves a new file needs the host to upload it first. The
         // dialog stays open until the host reports back: md-dialog closes on
@@ -1255,8 +1378,14 @@ export class WidgetForm extends LitElement {
     // Save on Change applies to a form shown in the tile only. Studio does not
     // evaluate the setting's condition, so a dialog form with a stale
     // autoSubmit keeps its buttons.
+    // A form with a media field keeps its buttons too: photos are added one
+    // by one and saved once.
     autoSubmits(): boolean {
-        return this.inputData?.autoSubmit === true && !this.inputData?.formButton
+        return (
+            this.inputData?.autoSubmit === true &&
+            !this.inputData?.formButton &&
+            !this.inputData?.formFields?.some((field) => field?.type === 'media')
+        )
     }
 
     // Save on Change: a committed change (change, never input, so not every
@@ -1387,6 +1516,318 @@ export class WidgetForm extends LitElement {
         }
     }
 
+    /**
+     * A save with media fields. Waits for their photos to be resized and
+     * located, then builds one row per photo in the field's photo table, put
+     * ahead of the form's own items so the host writes the photos first and
+     * the record last. A field whose target column is in a photo table goes
+     * into every photo row of it instead of a row of its own: in a form that
+     * only adds photos to a record, the hidden field with the record's key.
+     * With photos, the save goes out as media-data-submit; without any, the
+     * rest of the form is saved as it would be without the media field.
+     */
+    async submitWithMedia(formItems: (ValueItem | FileItem)[], mediaFields: number[]) {
+        this.submitting = true
+        this.submitError = ''
+        try {
+            const fields = this.inputData?.formFields ?? []
+            await Promise.all(
+                mediaFields.flatMap((i) => (this.mediaPhotos[i] ?? []).map((photo) => photo.ready))
+            )
+
+            const sameTable = (a: TargetRef, b: TargetRef) =>
+                a.swarm_app_databackend_key === b.swarm_app_databackend_key && a.table_name === b.table_name
+            const photoTables = mediaFields.flatMap((i) => companionRef(fields[i]?.targetColumn) ?? [])
+            const shared = (table: TargetRef) =>
+                formItems.filter(
+                    (item): item is ValueItem =>
+                        !('file' in item) && item.row === undefined && sameTable(item, table)
+                )
+            const rest = formItems.filter((item) => !photoTables.some((table) => sameTable(item, table)))
+
+            const photoItems: (ValueItem | MediaFileItem)[] = []
+            let row = 0
+            for (const i of mediaFields) {
+                const field = fields[i]
+                const photos = this.mediaPhotos[i] ?? []
+                if (!field || !photos.length) continue
+                const keyRef = companionRef(field.targetColumn)
+                const { namespace } = mediaSettings(field)
+                if (!keyRef || !namespace) {
+                    this.submitError = `“${field.label ?? 'Photos'}” has no ${keyRef ? 'File Namespace' : 'Target Column'} set, so its photos cannot be stored. Nothing was saved.`
+                    return
+                }
+                if (photos.some((photo) => !photo.file)) {
+                    this.submitError =
+                        'Remove the photos marked as not usable, then save again. Nothing was saved.'
+                    return
+                }
+                const link = this.mediaLinkValue(field, formItems)
+                if (typeof link === 'string') {
+                    this.submitError = link
+                    return
+                }
+                const common = shared(keyRef)
+                for (const photo of photos) {
+                    row++
+                    const at = (target: unknown): (TargetRef & { row: number }) | undefined => {
+                        const ref = companionRef(target)
+                        return ref ? { ...ref, row } : undefined
+                    }
+                    const put = (target: unknown, value: unknown) => {
+                        const ref = at(target)
+                        if (ref) photoItems.push({ ...ref, value })
+                    }
+                    const file = photo.file!
+                    const contentType = photo.contentType ?? 'image/jpeg'
+                    for (const item of common) photoItems.push({ ...item, row })
+                    put(field.mediaIdColumn, photo.id)
+                    if (link) photoItems.push({ ...link.ref, row, value: link.value })
+                    // Cleared ahead of the file item, which carries it for
+                    // the host to fill, as for a file field.
+                    const urlRef = companionRef(field.fileUrlColumn)
+                    if (urlRef) photoItems.push({ ...urlRef, row, value: null })
+                    photoItems.push({
+                        ...keyRef,
+                        row,
+                        id: photo.id,
+                        file,
+                        namespace,
+                        contentType,
+                        ...(photo.key ? { key: photo.key } : {}),
+                        ...(urlRef ? { urlColumn: urlRef } : {})
+                    })
+                    put(field.fileNameColumn, file.name)
+                    put(field.fileSizeColumn, file.size)
+                    put(field.fileTypeColumn, contentType)
+                    put(field.capturedAtColumn, photo.capturedAt?.toISOString() ?? null)
+                    put(field.latitudeColumn, photo.position?.latitude ?? null)
+                    put(field.longitudeColumn, photo.position?.longitude ?? null)
+                    put(field.altitudeColumn, photo.position?.altitude ?? null)
+                    put(field.positionSourceColumn, photo.position?.source ?? null)
+                }
+            }
+
+            // No photos: what else the form holds is saved as without them.
+            if (!photoItems.length) {
+                if (rest.some((item) => 'file' in item)) {
+                    this.submitting = false
+                    await this.submitWithFiles(rest)
+                    return
+                }
+                if (rest.length)
+                    this.dispatchEvent(
+                        new CustomEvent('data-submit', { detail: rest, bubbles: false, composed: false })
+                    )
+                this.afterSave()
+                return
+            }
+
+            // A photo stored by a failed save keeps its key; the others start over.
+            this.mediaPhotos = Object.fromEntries(
+                Object.entries(this.mediaPhotos).map(([i, list]) => [
+                    i,
+                    list.map((photo) => ({ ...photo, upload: photo.key ? ('stored' as const) : undefined }))
+                ])
+            )
+            const items = [
+                ...photoItems,
+                // A file field's file is reported by an id of its own.
+                ...rest.map((item) => ('file' in item ? { ...item, id: newId() } : item))
+            ]
+            let outcome: Promise<unknown> | undefined
+            const detail: MediaDataSubmitDetail = {
+                items,
+                waitUntil: (promise) => {
+                    outcome ??= Promise.resolve(promise)
+                },
+                progress: (id, state, key) => this.photoProgress(id, state, key)
+            }
+            this.dispatchEvent(
+                new CustomEvent(MEDIA_DATA_SUBMIT, { detail, bubbles: false, composed: false })
+            )
+            if (!outcome) {
+                this.submitError =
+                    'This board cannot store photos: it runs an IronFlock Studio version without photo uploads. Nothing was saved.'
+                return
+            }
+            await outcome
+            this.afterSave()
+        } catch (err) {
+            const message = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
+            this.submitError = message || 'The photos could not be saved.'
+        } finally {
+            this.submitting = false
+            if (this.resyncAfterSubmit) {
+                this.resyncAfterSubmit = false
+                this.syncOpenParameter()
+            }
+        }
+    }
+
+    /**
+     * The value every photo row of a media field gets in its Link Column:
+     * that of the Link From Field, as this save writes it. Undefined when
+     * the field links nothing, and a message (the save is refused) when the
+     * link is half set up or its field holds no value.
+     */
+    mediaLinkValue(
+        field: Column,
+        formItems: (ValueItem | FileItem)[]
+    ): { ref: TargetRef; value: unknown } | string | undefined {
+        const label = typeof field.mediaLinkField === 'string' ? field.mediaLinkField.trim() : ''
+        const ref = companionRef(field.mediaLinkColumn)
+        const name = field.label || 'Photos'
+        if (!label && !ref) return undefined
+        if (!label || !ref)
+            return `“${name}” has a ${label ? 'Link From Field but no Link Column' : 'Link Column but no Link From Field'}, so its photos cannot be linked. Nothing was saved.`
+        const source = this.inputData?.formFields?.find(
+            (other) => other?.label === label && !isSection(other) && other.type !== 'media'
+        )
+        const target = companionRef(source?.targetColumn)
+        const item = target
+            ? [...formItems]
+                  .reverse()
+                  .find(
+                      (candidate): candidate is ValueItem =>
+                          !('file' in candidate) &&
+                          candidate.row === undefined &&
+                          candidate.swarm_app_databackend_key === target.swarm_app_databackend_key &&
+                          candidate.table_name === target.table_name &&
+                          candidate.column_name === target.column_name
+                  )
+            : undefined
+        const value = item?.value
+        if (value === null || value === undefined || (typeof value === 'string' && !value.trim()))
+            return `“${label}” has no value to link the photos to. Nothing was saved.`
+        return { ref, value }
+    }
+
+    // The host's report on one file of a save with photos.
+    photoProgress(id: string, state: PhotoUploadState, key?: string) {
+        for (const [i, list] of Object.entries(this.mediaPhotos)) {
+            if (list.some((photo) => photo.id === id)) {
+                this.updatePhoto(Number(i), id, {
+                    upload: state,
+                    ...(state === 'stored' && typeof key === 'string' && key ? { key } : {})
+                })
+                return
+            }
+        }
+    }
+
+    // Change one photo of a media field; a photo removed meanwhile only lets
+    // go of its new thumbnail.
+    private updatePhoto(i: number, id: string, patch: Partial<Photo>) {
+        const list = this.mediaPhotos[i]
+        const at = list?.findIndex((photo) => photo.id === id) ?? -1
+        if (!list || at < 0) {
+            if (patch.preview) URL.revokeObjectURL(patch.preview)
+            return
+        }
+        const next = [...list]
+        next[at] = { ...list[at], ...patch }
+        this.mediaPhotos = { ...this.mediaPhotos, [i]: next }
+    }
+
+    // Take the photos the picker, the camera or a drop put into a media
+    // field's input. The input is emptied at once: it only hands them over,
+    // so the same photo can be added again and its required rule follows
+    // the list. Each photo is then prepared on its own (prepareMedia).
+    handlePhotosChosen(event: Event, field: Column, i: number) {
+        const input = event.target as HTMLInputElement
+        const files = Array.from(input.files ?? [])
+        input.value = ''
+        this.dragTarget = undefined
+        if (!files.length) return
+        const settings = mediaSettings(field)
+        const addedAt = Date.now()
+        const photos = [...(this.mediaPhotos[i] ?? [])]
+        const refused: string[] = []
+        for (const original of files) {
+            if (photos.length >= settings.maxPhotos) {
+                refused.push(
+                    `This field takes at most ${settings.maxPhotos} photo${settings.maxPhotos === 1 ? '' : 's'}.`
+                )
+                break
+            }
+            if (!fileContentType(original, settings.accepted)) {
+                refused.push(`“${original.name}” is not an image this field accepts.`)
+                continue
+            }
+            const photo: Photo = { id: newId(), original, ready: Promise.resolve() }
+            photo.ready = this.prepareMedia(field, i, photo, addedAt)
+            photos.push(photo)
+        }
+        this.mediaPhotos = { ...this.mediaPhotos, [i]: photos }
+        const errors = { ...this.fileErrors }
+        if (refused.length) errors[i] = refused.join(' ')
+        else delete errors[i]
+        this.fileErrors = errors
+        if (input.form) this.refreshFieldValues(input.form)
+    }
+
+    /**
+     * Make a photo ready to store: read its capture time and GPS position
+     * (before resizing, which drops them), resize it into a JPEG, and, when
+     * the field stores positions and the photo has none but was just taken,
+     * ask the device where it is. A photo the browser cannot decode is kept
+     * as it is when it fits in one upload; otherwise it is marked not usable.
+     */
+    private async prepareMedia(field: Column, i: number, photo: Photo, addedAt: number): Promise<void> {
+        const settings = mediaSettings(field)
+        const { original } = photo
+        const wantsFacts = settings.wantsPosition || !!companionRef(field.capturedAtColumn)
+        const facts = wantsFacts ? await readPhotoFacts(original) : {}
+        const taken = facts.capturedAt?.getTime() ?? original.lastModified
+        const fresh = Math.abs(addedAt - taken) <= FRESH_PHOTO_MS
+        const located: Promise<Photo['position']> = facts.position
+            ? Promise.resolve({ ...facts.position, source: 'exif' })
+            : settings.wantsPosition && fresh
+              ? devicePosition().then((position) => position && { ...position, source: 'device' })
+              : Promise.resolve(undefined)
+
+        const jpeg = await toJpeg(original, settings.maxEdge, settings.quality)
+        let file: File | undefined
+        let contentType: string | undefined
+        let error: string | undefined
+        if (jpeg) {
+            file = new File([jpeg], jpegName(original.name), {
+                type: 'image/jpeg',
+                lastModified: original.lastModified
+            })
+            contentType = 'image/jpeg'
+            if (!settings.accepted.some((pattern) => typeMatches(pattern, contentType!)))
+                error = 'Photos are stored as JPEG, which this field’s Accepted File Types leave out.'
+        } else if (original.size <= INLINE_MAX_BYTES) {
+            file = original
+            contentType = fileContentType(original, settings.accepted)
+        } else {
+            error = `This browser cannot read “${original.name}”, and at ${formatBytes(original.size)} it is too large to store as it is.`
+        }
+        if (!error && file && settings.maxBytes !== undefined && file.size > settings.maxBytes)
+            error = `“${original.name}” is ${formatBytes(file.size)}, more than the ${formatBytes(settings.maxBytes)} this field accepts.`
+
+        const position = await located
+        this.updatePhoto(i, photo.id, {
+            ...(error ? { file: undefined, error } : { file, contentType }),
+            preview: jpeg && !error ? URL.createObjectURL(file!) : undefined,
+            capturedAt: facts.capturedAt ?? (fresh ? new Date(taken) : undefined),
+            position
+        })
+    }
+
+    removePhoto(event: Event, i: number, id: string) {
+        const list = this.mediaPhotos[i] ?? []
+        releasePhotos(list.filter((photo) => photo.id === id))
+        this.mediaPhotos = { ...this.mediaPhotos, [i]: list.filter((photo) => photo.id !== id) }
+        const errors = { ...this.fileErrors }
+        delete errors[i]
+        this.fileErrors = errors
+        const form = (event.currentTarget as HTMLElement).closest('form')
+        if (form) this.refreshFieldValues(form)
+    }
+
     // Take the file the picker or a drop put into a file field's input, or
     // refuse it with a reason when its type or size is not accepted.
     handleFileChosen(event: Event, field: Column, i: number) {
@@ -1503,6 +1944,8 @@ export class WidgetForm extends LitElement {
         // A file field holds the name of its new file, or else the key of the
         // record's current one.
         if (field.type === 'file') return this.chosenFiles[i]?.name ?? this.effectivePreFilledValue(field) ?? ''
+        // A media field holds how many photos it has, or '' with none.
+        if (field.type === 'media') return String((this.mediaPhotos[i] ?? []).length || '')
         // A secret field holds only what was typed; a saved one is never read back.
         if (field.type === 'secret') {
             const typed = formData.get(name)
@@ -1917,6 +2360,123 @@ export class WidgetForm extends LitElement {
         `
     }
 
+    /**
+     * A media field: the photos as thumbnails, each with its state and a
+     * remove button, and a tile that adds more. A transparent native file
+     * input covers the tile, as the file drop zone: a tap opens the camera
+     * (Open the Camera Directly) or the phone's choice of camera, library and
+     * files; a computer's picker or a drop takes several at once. Its
+     * required rule holds only while there is no photo.
+     */
+    renderMediaField(field: Column, i: number, layout: string) {
+        const settings = mediaSettings(field)
+        const photos = this.mediaPhotos[i] ?? []
+        const error = settings.namespace
+            ? this.fileErrors[i] || photos.find((photo) => photo.error)?.error
+            : 'This field has no File Namespace set, so it cannot store photos.'
+        const required = !!field.required
+        const disabled = !settings.namespace || this.submitting
+        const max = settings.maxPhotos
+        const count = photos.length
+            ? `${photos.length}${Number.isFinite(max) ? ` of ${max}` : ''} photo${photos.length === 1 && !Number.isFinite(max) ? '' : 's'}`
+            : ''
+        const blockDrop = (event: DragEvent) => {
+            if (disabled) event.preventDefault()
+        }
+        return html`
+            <div class="label media-field ${layout}">
+                <span>${field.label}${required ? ' *' : ''}</span>
+                <div class="media-grid" ?invalid=${!!error}>
+                    ${repeat(
+                        photos,
+                        (photo) => photo.id,
+                        (photo) => this.renderPhoto(photo, i)
+                    )}
+                    ${photos.length >= max
+                        ? nothing
+                        : html`<div
+                              class="media-add"
+                              ?drag-over=${this.dragTarget === i}
+                              ?disabled=${disabled}
+                              @dragover=${blockDrop}
+                              @drop=${(event: DragEvent) => {
+                                  this.dragTarget = undefined
+                                  blockDrop(event)
+                              }}
+                          >
+                              <md-icon aria-hidden="true"
+                                  >${settings.capture ? 'photo_camera' : 'add_photo_alternate'}</md-icon
+                              >
+                              <span>${settings.capture ? 'Take photo' : 'Add photos'}</span>
+                              <input
+                                  type="file"
+                                  class="file-input"
+                                  aria-label=${`${field.label || 'Photos'}: ${settings.capture ? 'take a photo' : 'add photos'}`}
+                                  aria-describedby="media-hint-${i}"
+                                  accept=${acceptAttribute(settings.accepted)}
+                                  multiple
+                                  capture=${ifDefined(settings.capture ? 'environment' : undefined)}
+                                  ?required=${required && !photos.length}
+                                  ?disabled=${disabled}
+                                  @change=${(event: Event) => this.handlePhotosChosen(event, field, i)}
+                                  @dragenter=${() => (this.dragTarget = i)}
+                                  @dragleave=${() => (this.dragTarget = undefined)}
+                              />
+                          </div>`}
+                </div>
+                <span id="media-hint-${i}" class="supporting-text ${error ? 'error' : ''}" aria-live="polite"
+                    >${error || field.description || count}</span
+                >
+            </div>
+        `
+    }
+
+    // One photo of a media field: its thumbnail (an icon where the browser
+    // could not decode it), a bar while it is prepared or uploaded, a mark
+    // once stored or when it failed, a pin when it has a position.
+    renderPhoto(photo: Photo, i: number) {
+        const name = photo.original.name
+        const state = photo.error ? 'error' : !photo.file ? 'preparing' : (photo.upload ?? 'ready')
+        const status: Record<string, string> = {
+            preparing: 'Preparing',
+            uploading: 'Uploading',
+            stored: 'Stored',
+            failed: 'Upload failed',
+            error: photo.error ?? 'Not usable',
+            ready: ''
+        }
+        const where = photo.position
+            ? `taken at ${photo.position.latitude.toFixed(5)}, ${photo.position.longitude.toFixed(5)} (${photo.position.source === 'exif' ? 'from the photo' : 'from this device'})`
+            : ''
+        const label = [name, status[state], where].filter(Boolean).join(' · ')
+        return html`
+            <div class="media-thumb" state=${state} title=${label} role="img" aria-label=${label}>
+                ${photo.preview
+                    ? html`<img src=${photo.preview} alt="" />`
+                    : html`<md-icon aria-hidden="true">${photo.error ? 'broken_image' : 'image'}</md-icon>`}
+                ${state === 'preparing' || state === 'uploading'
+                    ? html`<md-linear-progress indeterminate></md-linear-progress>`
+                    : nothing}
+                ${state === 'stored'
+                    ? html`<md-icon class="media-badge" aria-hidden="true">cloud_done</md-icon>`
+                    : state === 'failed' || state === 'error'
+                      ? html`<md-icon class="media-badge" aria-hidden="true">error</md-icon>`
+                      : nothing}
+                ${photo.position
+                    ? html`<md-icon class="media-pin" aria-hidden="true">location_on</md-icon>`
+                    : nothing}
+                <md-icon-button
+                    class="media-remove"
+                    type="button"
+                    aria-label="Remove ${name}"
+                    ?disabled=${this.submitting}
+                    @click=${(event: Event) => this.removePhoto(event, i, photo.id)}
+                    ><md-icon>close</md-icon></md-icon-button
+                >
+            </div>
+        `
+    }
+
     // A heading across the row that groups the fields after it, with the Hint
     // Text under it. h4 and a div rather than h3 and p: the shadow root styles
     // those for the form's own title and subtitle.
@@ -1939,6 +2499,8 @@ export class WidgetForm extends LitElement {
         this.fieldValues = {}
         this.chosenFiles = {}
         this.fileErrors = {}
+        Object.values(this.mediaPhotos).forEach(releasePhotos)
+        this.mediaPhotos = {}
         this.revealedSecrets = {}
         this.typedColors = {}
         this.generatedIds = {}
@@ -2376,6 +2938,129 @@ export class WidgetForm extends LitElement {
             position: relative;
             z-index: 1;
             flex: 0 0 auto;
+        }
+
+        .media-field {
+            gap: 4px;
+        }
+
+        .media-field .supporting-text {
+            padding: 0 16px;
+        }
+
+        /* Thumbnails and the add tile, 96px squares: two fit beside each
+           other and the remove button keeps a 40px touch target. */
+        .media-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .media-thumb,
+        .media-add {
+            position: relative;
+            flex: 0 0 auto;
+            width: 96px;
+            height: 96px;
+            box-sizing: border-box;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .media-thumb {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--md-sys-color-outline);
+        }
+
+        .media-thumb img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .media-thumb[state='error'],
+        .media-thumb[state='failed'] {
+            border: 2px solid var(--md-sys-color-error, #b3261e);
+        }
+
+        .media-thumb md-linear-progress {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
+        /* Light marks on a dark disc read over any photo. */
+        .media-remove,
+        .media-badge,
+        .media-pin {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+        }
+
+        .media-remove {
+            top: 2px;
+            right: 2px;
+            z-index: 1;
+            --md-icon-button-icon-color: #fff;
+            --md-icon-button-hover-icon-color: #fff;
+            --md-icon-button-focus-icon-color: #fff;
+            --md-icon-button-pressed-icon-color: #fff;
+        }
+
+        .media-badge,
+        .media-pin {
+            bottom: 6px;
+            padding: 2px;
+            --md-icon-size: 18px;
+        }
+
+        .media-badge {
+            left: 6px;
+        }
+
+        .media-pin {
+            right: 6px;
+        }
+
+        .media-add {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 4px;
+            border: 1px dashed var(--md-sys-color-outline);
+            font-size: 12px;
+            line-height: 16px;
+            text-align: center;
+        }
+
+        .media-add:hover:not([disabled]),
+        .media-add[drag-over] {
+            border-style: solid;
+        }
+
+        .media-add[drag-over] {
+            border-width: 2px;
+        }
+
+        .media-add:has(.file-input:focus-visible) {
+            outline: 2px solid currentColor;
+            outline-offset: 2px;
+        }
+
+        .media-grid[invalid] .media-add {
+            border-color: var(--md-sys-color-error, #b3261e);
+        }
+
+        .media-add[disabled] {
+            opacity: 0.6;
         }
 
         /* The colour over a checkerboard, so a translucent one shows as
@@ -2876,6 +3561,8 @@ export class WidgetForm extends LitElement {
                                     return this.renderCheckbox(field, i, layout)
                                 case 'file':
                                     return this.renderFileField(field, i, layout)
+                                case 'media':
+                                    return this.renderMediaField(field, i, layout)
                                 case 'secret':
                                     return this.renderSecretField(field, i, layout)
                                 case 'color':

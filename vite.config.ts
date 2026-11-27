@@ -57,7 +57,7 @@ export default defineConfig({
         },
         sourcemap: true,
         rollupOptions: {
-            external: [/^@material\/web/, /^lit-flatpickr/],
+            external: [/^lit/, /^@lit/, /^@material\/web/, /^lit-flatpickr/],
             output: {
                 banner: '/* @license Copyright (c) 2025 Ironflock GmbH. All rights reserved.*/'
             }
